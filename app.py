@@ -51,7 +51,6 @@ st.markdown("""
         color: white;
     }
 
-    /* Estilo corregido para el ficho digital con colores de alto contraste */
     .ficho-card {
         background: #1B4D3E;
         color: #FFFFFF;
@@ -113,7 +112,6 @@ if modo == "Portal del Conductor":
     with tab_reg:
         if st.session_state.ultimo_turno_registrado:
             t_info = st.session_state.ultimo_turno_registrado
-            # HTML forzado con colores de texto explícitos para que se vea perfectamente la placa y el ficho
             st.markdown(f"""
                 <div class="ficho-card">
                     <h3 style="color: #FFFFFF !important; margin:0 0 10px 0; font-size: 22px;">TURNO ASIGNADO</h3>
@@ -184,6 +182,57 @@ if modo == "Portal del Conductor":
             st.metric("Vehiculos en Espera (Esturnados)", espera_count)
 
             st.markdown("---")
+            
+            # --- PANELES GRANDES DE LLAMADO EN VIVO PARA INGRESAR Y SALIR ---
+            st.markdown("#### Vehiculos Autorizados en Pantalla")
+            
+            df_ingresar = df_turnos[df_turnos["estado"] == "AUTORIZADO PARA INGRESAR"]
+            df_salir = df_turnos[df_turnos["estado"] == "AUTORIZADO PARA SALIR"]
+            
+            col_ing, col_sal = st.columns(2)
+            
+            with col_ing:
+                st.markdown("""
+                    <div style="background-color: #1B4D3E; color: white; padding: 12px; border-radius: 8px 8px 0 0; text-align: center;">
+                        <h4 style="color: #FFD700 !important; margin:0;">AUTORIZADOS PARA INGRESAR</h4>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                if df_ingresar.empty:
+                    st.markdown("<div style='background-color: #EFEFEF; padding: 15px; border-radius: 0 0 8px 8px; text-align: center; color: #666;'>No hay vehículos para ingresar.</div>", unsafe_allow_html=True)
+                else:
+                    for _, row in df_ingresar.iterrows():
+                        st.markdown(f"""
+                            <div style="background-color: #E8F5E9; border: 2px solid #2E7D32; padding: 15px; border-radius: 0 0 8px 8px; margin-bottom: 10px; text-align: center;">
+                                <span style="font-size: 15px; font-weight: bold; color: #2E7D32;">Ficho: {row['id_turno']}</span><br>
+                                <span style="font-size: 32px; font-weight: bold; color: #1B4D3E; letter-spacing: 2px;">{row['placa']}</span><br>
+                                <span style="font-size: 14px; color: #333;"><b>Destino:</b> {row['bodega']}</span><br>
+                                <span style="font-size: 13px; color: #000; background-color: #C8E6C9; padding: 2px 6px; border-radius: 4px;"><b>Aviso:</b> {row['mensaje_admin']}</span>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+            with col_sal:
+                st.markdown("""
+                    <div style="background-color: #B71C1C; color: white; padding: 12px; border-radius: 8px 8px 0 0; text-align: center;">
+                        <h4 style="color: #FFD700 !important; margin:0;">AUTORIZADOS PARA SALIR</h4>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                if df_salir.empty:
+                    st.markdown("<div style='background-color: #EFEFEF; padding: 15px; border-radius: 0 0 8px 8px; text-align: center; color: #666;'>No hay vehículos para salir.</div>", unsafe_allow_html=True)
+                else:
+                    for _, row in df_salir.iterrows():
+                        st.markdown(f"""
+                            <div style="background-color: #FFEBEE; border: 2px solid #C62828; padding: 15px; border-radius: 0 0 8px 8px; margin-bottom: 10px; text-align: center;">
+                                <span style="font-size: 15px; font-weight: bold; color: #C62828;">Ficho: {row['id_turno']}</span><br>
+                                <span style="font-size: 32px; font-weight: bold; color: #B71C1C; letter-spacing: 2px;">{row['placa']}</span><br>
+                                <span style="font-size: 14px; color: #333;"><b>Destino:</b> {row['bodega']}</span><br>
+                                <span style="font-size: 13px; color: #000; background-color: #FFCDD2; padding: 2px 6px; border-radius: 4px;"><b>Aviso:</b> {row['mensaje_admin']}</span>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+            st.markdown("---")
+            st.markdown("#### Historial General de Turnos")
             
             cols_mostrar = ["id_turno", "placa", "fecha_hora", "bodega", "tipo_movimiento", "estado", "mensaje_admin"]
             df_vista = df_turnos[cols_mostrar].rename(columns={
