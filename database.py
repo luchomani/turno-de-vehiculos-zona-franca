@@ -22,7 +22,6 @@ def registrar_turno(placa):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # Registramos la placa y por defecto entra 'EN ESPERA'
     c.execute("INSERT INTO turnos (placa, estado, hora_registro) VALUES (?, 'EN ESPERA', ?)", (placa.upper(), hora))
     conn.commit()
     turno_id = c.lastrowid
