@@ -183,11 +183,12 @@ if modo == "Portal del Conductor":
 
             st.markdown("---")
             
-            # --- PANELES GRANDES DE LLAMADO EN VIVO PARA INGRESAR Y SALIR ---
+            # --- PANELES GRANDES CON FILTRADO FLEXIBLE ---
             st.markdown("#### Vehiculos Autorizados en Pantalla")
             
-            df_ingresar = df_turnos[df_turnos["estado"] == "AUTORIZADO PARA INGRESAR"]
-            df_salir = df_turnos[df_turnos["estado"] == "AUTORIZADO PARA SALIR"]
+            # Filtramos de forma flexible buscando las palabras clave en el estado
+            df_ingresar = df_turnos[df_turnos["estado"].str.contains("INGRESAR", case=False, na=False)]
+            df_salir = df_turnos[df_turnos["estado"].str.contains("SALIR", case=False, na=False)]
             
             col_ing, col_sal = st.columns(2)
             
