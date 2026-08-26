@@ -51,13 +51,14 @@ st.markdown("""
         color: white;
     }
 
+    /* Estilo corregido para el ficho digital con colores de alto contraste */
     .ficho-card {
         background: #1B4D3E;
-        color: white;
-        padding: 25px;
+        color: #FFFFFF;
+        padding: 30px;
         border-radius: 12px;
         text-align: center;
-        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.2);
         margin: 20px 0px;
     }
 </style>
@@ -112,16 +113,17 @@ if modo == "Portal del Conductor":
     with tab_reg:
         if st.session_state.ultimo_turno_registrado:
             t_info = st.session_state.ultimo_turno_registrado
+            # HTML forzado con colores de texto explícitos para que se vea perfectamente la placa y el ficho
             st.markdown(f"""
                 <div class="ficho-card">
-                    <h3 style="color: white !important; margin:0;">TURNO ASIGNADO</h3>
-                    <p style="font-size: 16px; margin: 5px 0;">PLACA DEL VEHICULO</p>
-                    <h1 style="color: #FFD700 !important; font-size: 40px; margin: 0;">{t_info['placa']}</h1>
-                    <hr style="border-color: rgba(255,255,255,0.2);">
-                    <p style="font-size: 16px; margin: 5px 0;">NUMERO DE FICHO</p>
-                    <h1 style="color: #FFFFFF !important; font-size: 50px; margin: 0;">{t_info['id_turno']}</h1>
-                    <p style="margin-top: 10px;"><b>Destino:</b> {t_info['bodega']}</p>
-                    <p style="font-size: 13px; color: #E0E0E0;">Fecha y Hora: {t_info['fecha_hora']}</p>
+                    <h3 style="color: #FFFFFF !important; margin:0 0 10px 0; font-size: 22px;">TURNO ASIGNADO</h3>
+                    <p style="font-size: 16px; margin: 5px 0; color: #E0E0E0; font-weight: bold;">PLACA DEL VEHICULO</p>
+                    <div style="color: #FFD700; font-size: 48px; font-weight: bold; margin: 5px 0; letter-spacing: 2px;">{t_info['placa']}</div>
+                    <hr style="border-color: rgba(255,255,255,0.3); margin: 15px 0;">
+                    <p style="font-size: 16px; margin: 5px 0; color: #E0E0E0; font-weight: bold;">NUMERO DE FICHO</p>
+                    <div style="color: #FFFFFF; font-size: 55px; font-weight: bold; margin: 5px 0;">{t_info['id_turno']}</div>
+                    <p style="margin-top: 15px; font-size: 18px;"><b>Destino:</b> {t_info['bodega']}</p>
+                    <p style="font-size: 14px; color: #CCCCCC; margin-top: 5px;">Fecha y Hora: {t_info['fecha_hora']}</p>
                 </div>
             """, unsafe_allow_html=True)
             
@@ -183,7 +185,6 @@ if modo == "Portal del Conductor":
 
             st.markdown("---")
             
-            # Incluimos fecha_hora en la visualización para control
             cols_mostrar = ["id_turno", "placa", "fecha_hora", "bodega", "tipo_movimiento", "estado", "mensaje_admin"]
             df_vista = df_turnos[cols_mostrar].rename(columns={
                 "id_turno": "Turno",
@@ -268,7 +269,6 @@ elif modo == "Panel de Administración":
             st.markdown("---")
             st.markdown("#### Listado General de Vehiculos Registrados")
             
-            # Tabla limpia organizada con la fecha y hora incluida para auditoría
             cols_admin_vista = ["id_turno", "placa", "nombre", "cedula", "fecha_hora", "bodega", "tipo_movimiento", "estado", "mensaje_admin"]
             df_admin_tabla = df_admin[cols_admin_vista].rename(columns={
                 "id_turno": "Turno",
