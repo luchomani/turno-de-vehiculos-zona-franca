@@ -71,10 +71,11 @@ def cargar_datos():
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 datos = json.load(f)
-                # Asegurar compatibilidad si faltan llaves en registros antiguos
                 for item in datos:
                     if "tipo_movimiento" not in item:
                         item["tipo_movimiento"] = "Ingresar"
+                    if "fecha_hora" not in item:
+                        item["fecha_hora"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 return datos
         except Exception:
             return []
@@ -120,6 +121,7 @@ if modo == "Portal del Conductor":
                     <p style="font-size: 16px; margin: 5px 0;">NUMERO DE FICHO</p>
                     <h1 style="color: #FFFFFF !important; font-size: 50px; margin: 0;">{t_info['id_turno']}</h1>
                     <p style="margin-top: 10px;"><b>Destino:</b> {t_info['bodega']}</p>
+                    <p style="font-size: 13px; color: #E0E0E0;">Fecha y Hora: {t_info['fecha_hora']}</p>
                 </div>
             """, unsafe_allow_html=True)
             
@@ -181,10 +183,12 @@ if modo == "Portal del Conductor":
 
             st.markdown("---")
             
-            cols_mostrar = ["id_turno", "placa", "bodega", "tipo_movimiento", "estado", "mensaje_admin"]
+            # Incluimos fecha_hora en la visualización para control
+            cols_mostrar = ["id_turno", "placa", "fecha_hora", "bodega", "tipo_movimiento", "estado", "mensaje_admin"]
             df_vista = df_turnos[cols_mostrar].rename(columns={
                 "id_turno": "Turno",
                 "placa": "Placa",
+                "fecha_hora": "Fecha y Hora",
                 "bodega": "Bodega Destino",
                 "tipo_movimiento": "Movimiento",
                 "estado": "Estado Actual",
@@ -235,6 +239,7 @@ elif modo == "Panel de Administración":
             if reg_actual:
                 with st.form("form_admin_autorizacion"):
                     st.markdown(f"**Conductor:** {reg_actual['nombre']} | **Cedula:** {reg_actual['cedula']} | **Bodega:** {reg_actual['bodega']}")
+                    st.markdown(f"**Fecha y Hora de Enturnamiento:** {reg_actual['fecha_hora']}")
                     
                     tipo_mov = st.selectbox(
                         "Tipo de Movimiento",
@@ -262,7 +267,21 @@ elif modo == "Panel de Administración":
 
             st.markdown("---")
             st.markdown("#### Listado General de Vehiculos Registrados")
-            st.dataframe(pd.DataFrame(st.session_state.turnos), use_container_width=True)
+            
+            # Tabla limpia organizada con la fecha y hora incluida para auditoría
+            cols_admin_vista = ["id_turno", "placa", "nombre", "cedula", "fecha_hora", "bodega", "tipo_movimiento", "estado", "mensaje_admin"]
+            df_admin_tabla = df_admin[cols_admin_vista].rename(columns={
+                "id_turno": "Turno",
+                "placa": "Placa",
+                "nombre": "Conductor",
+                "cedula": "Cedula",
+                "fecha_hora": "Fecha y Hora",
+                "bodega": "Bodega",
+                "tipo_movimiento": "Movimiento",
+                "estado": "Estado",
+                "mensaje_admin": "Mensaje"
+            })
+            st.dataframe(df_admin_tabla, use_container_width=True, hide_index=True)
 
             col_d1, col_d2 = st.columns(2)
             with col_d1:
@@ -272,5 +291,5 @@ elif modo == "Panel de Administración":
                     st.success("Tablero reiniciado con exito.")
                     st.rerun()
             with col_d2:
-                csv_export = pd.DataFrame(st.session_state.turnos).to_csv(index=False).encode("utf-8")
+                csv_export = df_admin.to_csv(index=False).encode("utf-8")
                 st.download_button("Descargar Reporte en CSV", data=csv_export, file_name="control_turnos_zfc.csv", mime="text/csv")
