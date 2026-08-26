@@ -17,7 +17,7 @@ st.set_page_config(
     layout="centered",
 )
 
-# Estilos CSS optimizados para mayor legibilidad y botones grandes (ideal para celulares y adultos mayores)
+# Estilos CSS optimizados para mayor legibilidad y botones grandes
 st.markdown("""
 <style>
     .stApp {
@@ -29,7 +29,6 @@ st.markdown("""
         font-family: Arial, sans-serif;
     }
 
-    /* Agrandar campos de entrada y botones para facilitar la interacción táctil */
     input, select, textarea {
         font-size: 18px !important;
         padding: 12px !important;
@@ -71,7 +70,12 @@ def cargar_datos():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                datos = json.load(f)
+                # Asegurar compatibilidad si faltan llaves en registros antiguos
+                for item in datos:
+                    if "tipo_movimiento" not in item:
+                        item["tipo_movimiento"] = "Ingresar"
+                return datos
         except Exception:
             return []
     return []
@@ -153,7 +157,7 @@ if modo == "Portal del Conductor":
                             "nombre": nombre,
                             "cedula": cedula,
                             "bodega": bodega,
-                            "tipo_movimiento": "Ingresar", # Por defecto ingreso
+                            "tipo_movimiento": "Ingresar",
                             "estado": "En Espera",
                             "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "mensaje_admin": "En espera de autorizacion"
@@ -172,13 +176,11 @@ if modo == "Portal del Conductor":
         else:
             df_turnos = pd.DataFrame(st.session_state.turnos)
             
-            # Cantidad de vehículos en espera
             espera_count = len(df_turnos[df_turnos["estado"] == "En Espera"])
             st.metric("Vehiculos en Espera (Esturnados)", espera_count)
 
             st.markdown("---")
             
-            # Tabla adaptada sin emojis
             cols_mostrar = ["id_turno", "placa", "bodega", "tipo_movimiento", "estado", "mensaje_admin"]
             df_vista = df_turnos[cols_mostrar].rename(columns={
                 "id_turno": "Turno",
@@ -234,7 +236,6 @@ elif modo == "Panel de Administración":
                 with st.form("form_admin_autorizacion"):
                     st.markdown(f"**Conductor:** {reg_actual['nombre']} | **Cedula:** {reg_actual['cedula']} | **Bodega:** {reg_actual['bodega']}")
                     
-                    # Selección de tipo de movimiento (Ingresar o Salir)
                     tipo_mov = st.selectbox(
                         "Tipo de Movimiento",
                         ["Ingresar", "Salir"],
