@@ -85,8 +85,8 @@ def guardar_datos(datos):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(datos, f, ensure_ascii=False, indent=4)
 
-if "turnos" not in st.session_state:
-    st.session_state.turnos = cargar_datos()
+# Cargar datos siempre actualizados desde el archivo
+st.session_state.turnos = cargar_datos()
 
 if "ultimo_turno_registrado" not in st.session_state:
     st.session_state.ultimo_turno_registrado = None
@@ -96,9 +96,13 @@ st.markdown("## Zona Franca Santander")
 st.caption("Sistema de Enturnamiento y Control de Accesos - Cúcuta")
 st.divider()
 
-# Menú de Navegación lateral simplificado
+# Menú de Navegación lateral
 st.sidebar.markdown("### Navegación")
 modo = st.sidebar.radio("Seleccione el Portal:", ["Portal del Conductor", "Panel de Administración"])
+
+st.sidebar.markdown("---")
+if st.sidebar.button("🔄 Refrescar Datos"):
+    st.rerun()
 
 # ==========================================================================
 # PORTAL DEL CONDUCTOR
@@ -150,7 +154,8 @@ if modo == "Portal del Conductor":
                     if not placa or not nombre or not cedula or bodega == "Seleccione una bodega...":
                         st.error("Por favor complete todos los campos obligatorios.")
                     else:
-                        nuevo_id = len(st.session_state.turnos) + 1
+                        turnos_actuales = cargar_datos()
+                        nuevo_id = len(turnos_actuales) + 1
                         turno_str = f"T-{nuevo_id:03d}"
                         
                         nuevo_registro = {
@@ -165,28 +170,33 @@ if modo == "Portal del Conductor":
                             "mensaje_admin": "En espera de autorizacion"
                         }
                         
-                        st.session_state.turnos.append(nuevo_registro)
-                        guardar_datos(st.session_state.turnos)
+                        turnos_actuales.append(nuevo_registro)
+                        guardar_datos(turnos_actuales)
+                        st.session_state.turnos = turnos_actuales
                         st.session_state.ultimo_turno_registrado = nuevo_registro
                         st.rerun()
 
     with tab_tablero:
         st.markdown("### Tablero de Turnos en Vivo")
+        st.caption("🔄 Este tablero se actualiza automáticamente cada 3 segundos.")
 
-        if not st.session_state.turnos:
-            st.info("No hay vehiculos registrados en el sistema actualmente.")
-        else:
-            df_turnos = pd.DataFrame(st.session_state.turnos)
+        # Fragmento con actualización automática en vivo cada 3 segundos sin recargar toda la página
+        @st.fragment(run_every=3)
+        def mostrar_tablero_vivo():
+            turnos_vivos = cargar_datos()
+            
+            if not turnos_vivos:
+                st.info("No hay vehiculos registrados en el sistema actualmente.")
+                return
+
+            df_turnos = pd.DataFrame(turnos_vivos)
             
             espera_count = len(df_turnos[df_turnos["estado"] == "En Espera"])
             st.metric("Vehiculos en Espera (Esturnados)", espera_count)
 
             st.markdown("---")
-            
-            # --- PANELES GRANDES CON FILTRADO FLEXIBLE ---
             st.markdown("#### Vehiculos Autorizados en Pantalla")
             
-            # Filtramos de forma flexible buscando las palabras clave en el estado
             df_ingresar = df_turnos[df_turnos["estado"].str.contains("INGRESAR", case=False, na=False)]
             df_salir = df_turnos[df_turnos["estado"].str.contains("SALIR", case=False, na=False)]
             
@@ -248,6 +258,8 @@ if modo == "Portal del Conductor":
             
             st.dataframe(df_vista, use_container_width=True, hide_index=True)
 
+        mostrar_tablero_vivo()
+
 # ==========================================================================
 # PANEL DE ADMINISTRACIÓN
 # ==========================================================================
@@ -275,17 +287,18 @@ elif modo == "Panel de Administración":
 
         st.success("Sesion de Administrador Activa")
 
-        if not st.session_state.turnos:
+        turnos_admin = cargar_datos()
+        if not turnos_admin:
             st.info("No hay registros pendientes en este momento.")
         else:
-            df_admin = pd.DataFrame(st.session_state.turnos)
+            df_admin = pd.DataFrame(turnos_admin)
 
             st.markdown("#### Gestion de Turnos y Autorizaciones")
             
             turno_sel = st.selectbox("Seleccione la Placa / Turno a Administrar", df_admin["id_turno"] + " - Placa: " + df_admin["placa"] + " (" + df_admin["estado"] + ")")
             id_seleccionado = turno_sel.split(" - ")[0]
 
-            reg_actual = next((item for item in st.session_state.turnos if item["id_turno"] == id_seleccionado), None)
+            reg_actual = next((item for item in turnos_admin if item["id_turno"] == id_seleccionado), None)
 
             if reg_actual:
                 with st.form("form_admin_autorizacion"):
@@ -312,8 +325,9 @@ elif modo == "Panel de Administración":
                         reg_actual["tipo_movimiento"] = tipo_mov
                         reg_actual["estado"] = nuevo_estado
                         reg_actual["mensaje_admin"] = mensaje_personalizado
-                        guardar_datos(st.session_state.turnos)
-                        st.success("Cambios aplicados correctamente.")
+                        guardar_datos(turnos_admin)
+                        st.session_state.turnos = turnos_admin
+                        st.success("Cambios aplicados correctamente y sincronizados con el tablero.")
                         st.rerun()
 
             st.markdown("---")
@@ -336,8 +350,8 @@ elif modo == "Panel de Administración":
             col_d1, col_d2 = st.columns(2)
             with col_d1:
                 if st.button("Reiniciar Todos los Turnos"):
-                    st.session_state.turnos = []
                     guardar_datos([])
+                    st.session_state.turnos = []
                     st.success("Tablero reiniciado con exito.")
                     st.rerun()
             with col_d2:
