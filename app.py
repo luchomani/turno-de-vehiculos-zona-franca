@@ -13,7 +13,6 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
-# QR opcional
 try:
     import qrcode
     HAS_QR = True
@@ -31,7 +30,7 @@ st.set_page_config(
 )
 
 # ==========================================================================
-# CSS CORPORATIVO — PALETA ZONA FRANCA SANTANDER
+# CSS CORPORATIVO
 # ==========================================================================
 st.markdown("""
 <style>
@@ -39,72 +38,124 @@ st.markdown("""
         --zfc-green-dark:  #12402A;
         --zfc-green-main:  #1B4D3E;
         --zfc-green-mid:   #2C6B56;
-        --zfc-olive:       #8A9A28;
         --zfc-bg:          #F5F7F6;
         --zfc-card:        #FFFFFF;
         --zfc-text:        #2C3E50;
         --zfc-text-soft:   #6B7280;
         --zfc-border:      #E1E8E5;
         --zfc-danger:      #9B1C1C;
-        --zfc-danger-bg:   #FCE9E9;
-        --zfc-success:     #1B4D3E;
-        --zfc-success-bg:  #E6F0EB;
-        --zfc-warn:        #8A6A00;
-        --zfc-warn-bg:     #FBF3D9;
     }
 
     .stApp { background-color: var(--zfc-bg); }
 
     html, body, [class*="css"] {
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        color: var(--zfc-text);
+        color: var(--zfc-text) !important;
     }
 
     h1, h2, h3, h4 {
         color: var(--zfc-green-dark) !important;
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
         font-weight: 700;
         letter-spacing: -0.3px;
     }
 
-    input, select, textarea {
-        font-size: 16px !important;
-        padding: 10px !important;
+    /* Labels de inputs */
+    .stTextInput label,
+    .stSelectbox label,
+    .stTextArea label,
+    .stNumberInput label {
+        color: #2C3E50 !important;
+        font-weight: 600 !important;
+        font-size: 15px !important;
     }
 
+    /* Cajas de input - fondo blanco, texto oscuro */
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea,
+    .stNumberInput > div > div > input {
+        background-color: #FFFFFF !important;
+        color: #1B1B1B !important;
+        border: 1.5px solid #C9D1CC !important;
+        border-radius: 8px !important;
+        font-size: 16px !important;
+        padding: 12px 14px !important;
+    }
+
+    .stTextInput > div > div > input::placeholder,
+    .stTextArea > div > div > textarea::placeholder,
+    .stNumberInput > div > div > input::placeholder {
+        color: #9CA3AF !important;
+        opacity: 1 !important;
+    }
+
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus {
+        border-color: #1B4D3E !important;
+        box-shadow: 0 0 0 2px rgba(27,77,62,0.15) !important;
+    }
+
+    /* Selectbox */
+    .stSelectbox > div > div {
+        background-color: #FFFFFF !important;
+        border: 1.5px solid #C9D1CC !important;
+        border-radius: 8px !important;
+        color: #1B1B1B !important;
+    }
+    .stSelectbox > div > div > div { color: #1B1B1B !important; }
+
+    div[data-baseweb="popover"] ul,
+    div[data-baseweb="menu"] ul { background-color: #FFFFFF !important; }
+    div[data-baseweb="popover"] li,
+    div[data-baseweb="menu"] li {
+        color: #1B1B1B !important;
+        background-color: #FFFFFF !important;
+    }
+    div[data-baseweb="popover"] li:hover,
+    div[data-baseweb="menu"] li:hover {
+        background-color: #E6F0EB !important;
+        color: #12402A !important;
+    }
+
+    /* Botones */
     .stButton>button {
-        background-color: var(--zfc-green-main);
-        color: white;
-        border-radius: 6px;
+        background-color: var(--zfc-green-main) !important;
+        color: #FFFFFF !important;
+        border-radius: 8px;
         border: none;
-        font-weight: 600;
-        font-size: 15px;
-        padding: 0.65rem 1.2rem;
+        font-weight: 700;
+        font-size: 16px;
+        padding: 0.8rem 1.2rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-        transition: all 0.2s ease;
     }
     .stButton>button:hover {
-        background-color: var(--zfc-green-mid);
-        color: white;
-    }
-    .stButton>button:focus:not(:active) {
-        border-color: var(--zfc-green-main);
-        color: white;
+        background-color: var(--zfc-green-mid) !important;
+        color: #FFFFFF !important;
     }
 
+    .stFormSubmitButton > button {
+        background-color: var(--zfc-green-main) !important;
+        color: #FFFFFF !important;
+        font-weight: 700;
+        font-size: 17px;
+        padding: 0.9rem 1.5rem;
+        border-radius: 8px;
+    }
+
+    /* Tabs */
     .stTabs [data-baseweb="tab-list"] { gap: 6px; }
     .stTabs [data-baseweb="tab"] {
         background-color: #EDF1EE;
         border-radius: 6px 6px 0 0;
         padding: 10px 18px;
         font-weight: 600;
-        color: var(--zfc-text);
+        color: #2C3E50;
     }
     .stTabs [aria-selected="true"] {
         background-color: var(--zfc-green-main) !important;
         color: #FFFFFF !important;
     }
 
+    /* Ticket */
     .ticket-card {
         background: linear-gradient(135deg, #12402A 0%, #1B4D3E 100%);
         color: #FFFFFF;
@@ -137,15 +188,8 @@ st.markdown("""
         margin: 4px 0;
         font-family: 'Courier New', monospace;
     }
-    .ticket-info {
-        font-size: 14px;
-        color: #D8E3DC;
-        margin: 4px 0;
-    }
-    .ticket-divider {
-        border-color: rgba(255,255,255,0.18);
-        margin: 14px 0;
-    }
+    .ticket-info { font-size: 14px; color: #D8E3DC; margin: 4px 0; }
+    .ticket-divider { border-color: rgba(255,255,255,0.18); margin: 14px 0; }
     .ticket-mensaje {
         background: rgba(255,255,255,0.10);
         padding: 12px;
@@ -242,11 +286,7 @@ st.markdown("""
         letter-spacing: 2px;
         text-transform: uppercase;
     }
-    .card-detalle {
-        font-size: 13px;
-        color: #333;
-        margin-top: 4px;
-    }
+    .card-detalle { font-size: 13px; color: #333; margin-top: 4px; }
     .card-aviso {
         display: inline-block;
         font-size: 12px;
@@ -266,11 +306,7 @@ st.markdown("""
         padding: 28px 20px;
         text-align: center;
         box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-        transition: box-shadow 0.2s ease;
         height: 100%;
-    }
-    .role-card:hover {
-        box-shadow: 0 6px 16px rgba(0,0,0,0.08);
     }
     .role-titulo {
         font-size: 18px;
@@ -279,11 +315,7 @@ st.markdown("""
         letter-spacing: 0.5px;
         margin-bottom: 6px;
     }
-    .role-desc {
-        font-size: 13px;
-        color: var(--zfc-text-soft);
-        line-height: 1.5;
-    }
+    .role-desc { font-size: 13px; color: var(--zfc-text-soft); line-height: 1.5; }
 
     .inst-header {
         display: flex;
@@ -297,7 +329,6 @@ st.markdown("""
         color: var(--zfc-green-dark);
         font-size: 22px;
         font-weight: 700;
-        letter-spacing: -0.5px;
         margin: 0;
     }
     .inst-sub {
@@ -307,24 +338,9 @@ st.markdown("""
         letter-spacing: 0.5px;
     }
 
-    div[data-testid="stMetricValue"] {
-        color: var(--zfc-green-dark);
-        font-weight: 700;
-        font-family: 'Helvetica Neue', sans-serif;
-    }
-    div[data-testid="stMetricLabel"] {
-        color: #556B2F;
-        font-weight: 600;
-    }
-
-    .stTextInput>div>div>input,
-    .stSelectbox>div>div>select {
-        border-color: var(--zfc-border);
-    }
-
-    .screen-mode header { display: none !important; }
-    .screen-mode [data-testid="stToolbar"] { display: none !important; }
-    .screen-mode [data-testid="stDecoration"] { display: none !important; }
+    div[data-testid="stMetricValue"] { color: var(--zfc-green-dark) !important; font-weight: 700; }
+    div[data-testid="stMetricLabel"] { color: #556B2F !important; font-weight: 600; }
+    div[data-testid="stAlert"] { border-radius: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -487,7 +503,6 @@ if "auth_vigilante" not in st.session_state:
 if "mi_turno_id" not in st.session_state:
     st.session_state.mi_turno_id = None
 
-# Detectar modo vía query param
 try:
     qp = st.query_params
     modo_qp = (qp.get("modo") or "").strip().lower()
@@ -500,7 +515,7 @@ except Exception:
 CONFIG = cargar_config()
 
 # ==========================================================================
-# =============   MODO: PANTALLA TV (sin login, solo lectura)   ============
+# MODO: PANTALLA TV
 # ==========================================================================
 if modo_qp == "pantalla":
     @st.fragment(run_every=4)
@@ -529,7 +544,7 @@ if modo_qp == "pantalla":
         with c2:
             st.markdown("""
             <div style="text-align:center; padding: 8px 0;">
-                <div style="color:#12402A; font-size:32px; font-weight:900; letter-spacing:-0.5px;">
+                <div style="color:#12402A; font-size:32px; font-weight:900;">
                     CONTROL DE ACCESOS EN TIEMPO REAL
                 </div>
                 <div style="color:#6B7280; font-size:14px; letter-spacing:3px; margin-top:6px;">
@@ -544,13 +559,12 @@ if modo_qp == "pantalla":
                     break
 
         st.markdown("<br>", unsafe_allow_html=True)
-
         col_i, col_s = st.columns(2)
 
         with col_i:
             st.markdown('<div class="col-header-ing">AUTORIZADOS PARA INGRESAR</div>', unsafe_allow_html=True)
             if not ingresos:
-                st.markdown('<div class="empty-state">No hay vehículos autorizados para ingresar en este momento.</div>', unsafe_allow_html=True)
+                st.markdown('<div class="empty-state">No hay vehículos autorizados para ingresar.</div>', unsafe_allow_html=True)
             else:
                 for t in ingresos:
                     st.markdown(f"""
@@ -565,7 +579,7 @@ if modo_qp == "pantalla":
         with col_s:
             st.markdown('<div class="col-header-sal">AUTORIZADOS PARA SALIR</div>', unsafe_allow_html=True)
             if not salidas:
-                st.markdown('<div class="empty-state">No hay vehículos autorizados para salir en este momento.</div>', unsafe_allow_html=True)
+                st.markdown('<div class="empty-state">No hay vehículos autorizados para salir.</div>', unsafe_allow_html=True)
             else:
                 for t in salidas:
                     st.markdown(f"""
@@ -588,7 +602,7 @@ if modo_qp == "pantalla":
     st.stop()
 
 # ==========================================================================
-# =============   MODO: CONDUCTOR (sin login)   ============================
+# MODO: CONDUCTOR
 # ==========================================================================
 if modo_qp == "conductor":
     render_header_institucional()
@@ -669,13 +683,13 @@ if modo_qp == "conductor":
 
         else:
             st.markdown("Completa tus datos para asignarte un turno.")
-            st.caption("Los campos con (*) son obligatorios")
+            st.caption("Todos los campos con (*) son obligatorios")
 
             with st.form("form_conductor", clear_on_submit=False):
-                placa = st.text_input("Placa del Vehículo * (Ej: ABC123)").upper().strip()
-                nombre = st.text_input("Nombre Completo del Conductor *").title().strip()
-                cedula = st.text_input("Número de Cédula *").strip()
-                telefono = st.text_input("Teléfono de contacto (opcional)").strip()
+                placa = st.text_input("Placa del Vehículo *", placeholder="Ej: ABC123").upper().strip()
+                nombre = st.text_input("Nombre Completo del Conductor *", placeholder="Ej: Juan Pérez").title().strip()
+                cedula = st.text_input("Número de Cédula *", placeholder="Ej: 1234567890").strip()
+                telefono = st.text_input("Teléfono de Contacto *", placeholder="Ej: 3001234567").strip()
                 bodega = st.selectbox(
                     "Bodega de Destino *",
                     ["Seleccione una bodega..."] + CONFIG.get("bodegas", []),
@@ -683,8 +697,28 @@ if modo_qp == "conductor":
                 submitted = st.form_submit_button("Obtener Turno", use_container_width=True)
 
                 if submitted:
-                    if not placa or not nombre or not cedula or bodega == "Seleccione una bodega...":
-                        st.error("Complete todos los campos obligatorios (*).")
+                    errores = []
+                    if not placa:
+                        errores.append("La placa del vehículo es obligatoria.")
+                    if not nombre:
+                        errores.append("El nombre del conductor es obligatorio.")
+                    if not cedula:
+                        errores.append("El número de cédula es obligatorio.")
+                    if not telefono:
+                        errores.append("El teléfono de contacto es obligatorio.")
+                    if bodega == "Seleccione una bodega...":
+                        errores.append("Debes seleccionar una bodega de destino.")
+                    if cedula and not cedula.isdigit():
+                        errores.append("La cédula debe contener solo números.")
+                    if telefono and not telefono.isdigit():
+                        errores.append("El teléfono debe contener solo números.")
+                    if telefono and len(telefono) < 7:
+                        errores.append("El teléfono debe tener al menos 7 dígitos.")
+                    if placa and len(placa) < 5:
+                        errores.append("La placa debe tener al menos 5 caracteres.")
+
+                    if errores:
+                        st.error("⚠️ Corrige los siguientes errores:\n\n" + "\n".join(f"• {e}" for e in errores))
                     else:
                         actuales = cargar_datos()
                         activo = next(
@@ -757,7 +791,7 @@ if modo_qp == "conductor":
     st.stop()
 
 # ==========================================================================
-# =============   MODO: VIGILANTE (con login)   ============================
+# MODO: VIGILANTE
 # ==========================================================================
 if modo_qp == "vigilante":
     render_header_institucional()
@@ -767,8 +801,8 @@ if modo_qp == "vigilante":
         left, center, right = st.columns([1, 1.2, 1])
         with center:
             with st.form("login_vig"):
-                u = st.text_input("Usuario")
-                p = st.text_input("Contraseña", type="password")
+                u = st.text_input("Usuario", placeholder="Ingresa tu usuario")
+                p = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
                 if st.form_submit_button("Iniciar Sesión", use_container_width=True):
                     if u == CONFIG.get("usuario_vigilante") and p == CONFIG.get("contrasena_vigilante"):
                         st.session_state.auth_vigilante = True
@@ -782,7 +816,6 @@ if modo_qp == "vigilante":
         st.markdown("### Portal del Vigilante")
         st.caption(f"Sesión activa · {ahora_str()}")
     with col_h2:
-        # 🔧 FIX: cerrar sesión limpia el modo de la URL
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_vig"):
             st.session_state.auth_vigilante = False
             try:
@@ -852,7 +885,7 @@ if modo_qp == "vigilante":
                             checks = {}
                             for k, label in CHECKLIST_ING:
                                 checks[k] = st.checkbox(label, key=f"in_{t['id_turno']}_{k}")
-                            obs = st.text_area("Observaciones (opcional)", key=f"obs_in_{t['id_turno']}")
+                            obs = st.text_area("Observaciones (opcional)", key=f"obs_in_{t['id_turno']}", placeholder="Si hay alguna novedad, descríbela aquí")
 
                             if st.form_submit_button("Confirmar Ingreso", use_container_width=True):
                                 if not all(checks.values()):
@@ -890,7 +923,7 @@ if modo_qp == "vigilante":
                             checks = {}
                             for k, label in CHECKLIST_SAL:
                                 checks[k] = st.checkbox(label, key=f"out_{t['id_turno']}_{k}")
-                            obs = st.text_area("Observaciones (opcional)", key=f"obs_out_{t['id_turno']}")
+                            obs = st.text_area("Observaciones (opcional)", key=f"obs_out_{t['id_turno']}", placeholder="Si hay alguna novedad, descríbela aquí")
 
                             if st.form_submit_button("Confirmar Salida", use_container_width=True):
                                 if not all(checks.values()):
@@ -915,7 +948,7 @@ if modo_qp == "vigilante":
     st.stop()
 
 # ==========================================================================
-# =============   MODO: OPERADOR (con login)   =============================
+# MODO: OPERADOR
 # ==========================================================================
 if modo_qp == "operador":
     render_header_institucional()
@@ -925,8 +958,8 @@ if modo_qp == "operador":
         left, center, right = st.columns([1, 1.2, 1])
         with center:
             with st.form("login_op"):
-                u = st.text_input("Usuario")
-                p = st.text_input("Contraseña", type="password")
+                u = st.text_input("Usuario", placeholder="Ingresa tu usuario")
+                p = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
                 if st.form_submit_button("Iniciar Sesión", use_container_width=True):
                     if u == CONFIG.get("usuario_admin") and p == CONFIG.get("contrasena_admin"):
                         st.session_state.auth_operador = True
@@ -940,7 +973,6 @@ if modo_qp == "operador":
         st.markdown("### Panel del Operador")
         st.caption(f"Sesión activa · {ahora_str()}")
     with col_h2:
-        # 🔧 FIX: cerrar sesión limpia el modo de la URL
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_op"):
             st.session_state.auth_operador = False
             try:
@@ -959,9 +991,7 @@ if modo_qp == "operador":
         "Historial",
     ])
 
-    # -----------------------------------------------------------------
-    # TAB GESTIÓN
-    # -----------------------------------------------------------------
+    # --- GESTIÓN ---
     with tab_gestion:
         turnos_g = cargar_datos()
         if not turnos_g:
@@ -1030,7 +1060,6 @@ if modo_qp == "operador":
                         mostrar = st.checkbox(
                             "Mostrar en pantalla pública",
                             value=bool(turno_sel.get("mostrar_en_pantalla", False)),
-                            help="Si lo desmarcas, se ocultará manualmente. El sistema lo oculta automáticamente por tiempo.",
                         )
 
                         eliminar = st.checkbox("Eliminar este turno permanentemente")
@@ -1049,9 +1078,7 @@ if modo_qp == "operador":
                                         t["estado"] = nuevo_estado
                                         t["mensaje_admin"] = mensaje
                                         t["mostrar_en_pantalla"] = mostrar
-
-                                        if ("AUTORIZADO" in nuevo_estado.upper()
-                                                and "AUTORIZADO" not in antes):
+                                        if "AUTORIZADO" in nuevo_estado.upper() and "AUTORIZADO" not in antes:
                                             t["fecha_autorizacion"] = ahora_str()
                                         break
                                 guardar_datos(turnos_g)
@@ -1077,10 +1104,7 @@ if modo_qp == "operador":
                     hide_index=True,
                     disabled=["Turno", "Placa", "Estado"],
                     column_config={
-                        "Visible": st.column_config.CheckboxColumn(
-                            "En pantalla",
-                            help="Marcar para mostrar en el tablero público",
-                        )
+                        "Visible": st.column_config.CheckboxColumn("En pantalla")
                     },
                     key="de_vis",
                 )
@@ -1097,9 +1121,7 @@ if modo_qp == "operador":
             else:
                 st.info("No hay turnos que coincidan con el filtro.")
 
-    # -----------------------------------------------------------------
-    # TAB PANTALLA
-    # -----------------------------------------------------------------
+    # --- PANTALLA ---
     with tab_pantalla:
         st.markdown("#### Vista previa de Pantalla Pública")
         st.caption(
@@ -1151,24 +1173,16 @@ if modo_qp == "operador":
                     </div>
                     """, unsafe_allow_html=True)
 
-    # -----------------------------------------------------------------
-    # TAB QR — Centro de Códigos QR
-    # -----------------------------------------------------------------
+    # --- QR ---
     with tab_qr:
         st.markdown("#### Centro de Códigos QR")
         st.caption(
             "Configura la URL base de tu aplicación y descarga los códigos QR "
-            "que corresponden a cada portal. Imprímelos y ubícalos en los puntos de acceso."
+            "que corresponden a cada portal."
         )
 
-        # ---------------------------------------------------------
-        # Paso 1: URL base
-        # ---------------------------------------------------------
         st.markdown("##### Paso 1 · Configura la URL base")
-        st.caption(
-            "Es la URL pública de tu aplicación en Streamlit Cloud. "
-            "Ejemplo: `https://turno-de-vehiculos-zona-franca.streamlit.app` (sin barra al final)"
-        )
+        st.caption("Ejemplo: `https://turno-de-vehiculos-zona-franca.streamlit.app` (sin barra al final)")
 
         base_url_actual = CONFIG.get("url_base", "").strip().rstrip("/")
 
@@ -1186,19 +1200,12 @@ if modo_qp == "operador":
                 st.rerun()
 
         base_url = CONFIG.get("url_base", "").strip().rstrip("/")
-
         st.markdown("---")
 
-        # ---------------------------------------------------------
-        # Paso 2: QR
-        # ---------------------------------------------------------
         if not base_url:
-            st.warning("Configura primero la URL base (paso 1) para generar los códigos QR.")
+            st.warning("Configura primero la URL base (paso 1).")
         elif not HAS_QR:
-            st.error(
-                "La librería **qrcode[pil]** no está instalada. "
-                "Agrégala a `requirements.txt` y vuelve a deployar."
-            )
+            st.error("La librería **qrcode[pil]** no está instalada. Agrégala a `requirements.txt`.")
         else:
             st.markdown("##### Paso 2 · Descarga e imprime los códigos QR")
 
@@ -1207,10 +1214,7 @@ if modo_qp == "operador":
                     "clave": "conductor",
                     "titulo": "CONDUCTOR",
                     "subtitulo": "Punto de enturnamiento",
-                    "descripcion": (
-                        "El conductor escanea este QR y accede directamente al formulario "
-                        "de registro. Solo ve su propio portal, no puede acceder a nada más."
-                    ),
+                    "descripcion": "El conductor escanea este QR y accede al formulario de registro.",
                     "color_hex": "#1B4D3E",
                     "archivo_png": "qr_conductor_zfc.png",
                 },
@@ -1218,10 +1222,7 @@ if modo_qp == "operador":
                     "clave": "vigilante",
                     "titulo": "VIGILANTE",
                     "subtitulo": "Punto de control / garita",
-                    "descripcion": (
-                        "El vigilante escanea este QR y accede a su portal de check-in y "
-                        "check-out. Requiere credenciales para ingresar."
-                    ),
+                    "descripcion": "El vigilante escanea este QR y accede a su portal de check-in/out.",
                     "color_hex": "#0D4A56",
                     "archivo_png": "qr_vigilante_zfc.png",
                 },
@@ -1229,10 +1230,7 @@ if modo_qp == "operador":
                     "clave": "pantalla",
                     "titulo": "PANTALLA TV",
                     "subtitulo": "Televisor informativo",
-                    "descripcion": (
-                        "Abre este enlace en las pantallas de la Zona Franca para mostrar "
-                        "en vivo los vehículos autorizados. Sin interacción, solo lectura."
-                    ),
+                    "descripcion": "Abre este enlace en las pantallas para mostrar vehículos autorizados.",
                     "color_hex": "#12402A",
                     "archivo_png": "qr_pantalla_zfc.png",
                 },
@@ -1253,15 +1251,13 @@ if modo_qp == "operador":
                         border-radius: 10px;
                         padding: 18px 16px 8px 16px;
                         text-align: center;
-                        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
                         margin-bottom: 12px;
                     ">
                         <div style="color:{portal['color_hex']}; font-weight:700;
                                     font-size:14px; letter-spacing:2px;">
                             {portal['titulo']}
                         </div>
-                        <div style="color:#6B7280; font-size:11px; margin-top:2px;
-                                    letter-spacing:1px;">
+                        <div style="color:#6B7280; font-size:11px; margin-top:2px;">
                             {portal['subtitulo']}
                         </div>
                     </div>
@@ -1269,13 +1265,8 @@ if modo_qp == "operador":
 
                     if qr_bytes:
                         st.image(qr_bytes, use_container_width=True)
-                    else:
-                        st.error("No se pudo generar el QR.")
-
-                    st.code(url_portal, language=None)
-                    st.caption(portal["descripcion"])
-
-                    if qr_bytes:
+                        st.code(url_portal, language=None)
+                        st.caption(portal["descripcion"])
                         st.download_button(
                             f"Descargar QR · {portal['titulo'].title()}",
                             data=qr_bytes,
@@ -1284,43 +1275,20 @@ if modo_qp == "operador":
                             use_container_width=True,
                             key=f"dl_qr_{portal['clave']}",
                         )
-
-                    st.markdown(
-                        f"<a href='{url_portal}' target='_blank' "
-                        f"style='display:block; text-align:center; margin-top:6px; "
-                        f"font-size:12px; color:{portal['color_hex']}; text-decoration:none; "
-                        f"font-weight:600;'>"
-                        f"Probar enlace en pestaña nueva →</a>",
-                        unsafe_allow_html=True,
-                    )
+                    else:
+                        st.error("No se pudo generar el QR.")
 
             st.markdown("---")
 
-            with st.expander("Ver todas las URLs generadas (para copiar)"):
-                st.markdown("**Copia y pega estas URLs donde las necesites:**")
+            with st.expander("Ver todas las URLs generadas"):
                 for portal in portales:
                     url_p = f"{base_url}/?modo={portal['clave']}"
                     st.markdown(f"**{portal['titulo']}**")
                     st.code(url_p, language=None)
-
-                st.markdown("**SELECTOR (home)**")
+                st.markdown("**HOME**")
                 st.code(base_url, language=None)
 
-            with st.expander("Recomendaciones de uso"):
-                st.markdown("""
-                - **Conductor**: imprime el QR en tamaño grande (mínimo 20×20 cm) y ubícalo
-                  visible en la caseta de enturnamiento, a la altura de la ventanilla del vehículo.
-                - **Vigilante**: imprime el QR en tamaño mediano y ubícalo en la garita de control.
-                  También puedes compartirlo con el enlace de WhatsApp de cada vigilante.
-                - **Pantalla TV**: no requiere imprimir QR. Solo abre el enlace directamente en el
-                  navegador del televisor y presiona `F11` para pantalla completa.
-                - **URL base**: si cambias de dominio, solo actualiza este campo y los QR se
-                  regeneran solos.
-                """)
-
-    # -----------------------------------------------------------------
-    # TAB CONFIG
-    # -----------------------------------------------------------------
+    # --- CONFIG ---
     with tab_config:
         st.markdown("#### Configuración del Sistema")
 
@@ -1333,11 +1301,10 @@ if modo_qp == "operador":
             )
 
             st.markdown("---")
-            st.markdown("**URL base de la aplicación** (para el QR)")
+            st.markdown("**URL base de la aplicación**")
             url_base_in = st.text_input(
                 "URL base (ej: https://tu-app.streamlit.app)",
                 value=CONFIG.get("url_base", ""),
-                help="Sin barra final. Se usa para generar el QR del conductor.",
             )
 
             st.markdown("---")
@@ -1379,9 +1346,7 @@ if modo_qp == "operador":
             st.warning("Todos los turnos han sido eliminados.")
             st.rerun()
 
-    # -----------------------------------------------------------------
-    # TAB HISTORIAL
-    # -----------------------------------------------------------------
+    # --- HISTORIAL ---
     with tab_historial:
         st.markdown("#### Historial General de Turnos")
         turnos_h = cargar_datos()
@@ -1399,7 +1364,7 @@ if modo_qp == "operador":
             st.markdown("---")
 
             cols = [
-                "id_turno", "placa", "nombre", "cedula", "fecha_hora",
+                "id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora",
                 "bodega", "tipo_movimiento", "estado", "mensaje_admin",
                 "fecha_autorizacion", "fecha_ingreso_zf", "fecha_salida_zf",
                 "observaciones_vigilante",
@@ -1411,6 +1376,7 @@ if modo_qp == "operador":
                 "placa": "Placa",
                 "nombre": "Conductor",
                 "cedula": "Cédula",
+                "telefono": "Teléfono",
                 "fecha_hora": "Fecha Registro",
                 "bodega": "Bodega",
                 "tipo_movimiento": "Movimiento",
@@ -1436,7 +1402,7 @@ if modo_qp == "operador":
     st.stop()
 
 # ==========================================================================
-# =============   HOME / SELECTOR DE PORTALES   ============================
+# HOME / SELECTOR DE PORTALES
 # ==========================================================================
 render_header_institucional()
 
@@ -1453,7 +1419,6 @@ with c1:
     </div>
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    # 🔧 FIX: st.button + query_params en lugar de link_button
     if st.button("Ingresar como Conductor", use_container_width=True, key="home_btn_cond"):
         st.query_params["modo"] = "conductor"
         st.rerun()
