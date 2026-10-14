@@ -59,7 +59,6 @@ st.markdown("""
         letter-spacing: -0.3px;
     }
 
-    /* Labels de inputs */
     .stTextInput label,
     .stSelectbox label,
     .stTextArea label,
@@ -69,7 +68,6 @@ st.markdown("""
         font-size: 15px !important;
     }
 
-    /* Cajas de input - fondo blanco, texto oscuro */
     .stTextInput > div > div > input,
     .stTextArea > div > div > textarea,
     .stNumberInput > div > div > input {
@@ -94,7 +92,6 @@ st.markdown("""
         box-shadow: 0 0 0 2px rgba(27,77,62,0.15) !important;
     }
 
-    /* Selectbox */
     .stSelectbox > div > div {
         background-color: #FFFFFF !important;
         border: 1.5px solid #C9D1CC !important;
@@ -116,7 +113,6 @@ st.markdown("""
         color: #12402A !important;
     }
 
-    /* Botones */
     .stButton>button {
         background-color: var(--zfc-green-main) !important;
         color: #FFFFFF !important;
@@ -141,7 +137,6 @@ st.markdown("""
         border-radius: 8px;
     }
 
-    /* Tabs */
     .stTabs [data-baseweb="tab-list"] { gap: 6px; }
     .stTabs [data-baseweb="tab"] {
         background-color: #EDF1EE;
@@ -155,7 +150,6 @@ st.markdown("""
         color: #FFFFFF !important;
     }
 
-    /* Ticket */
     .ticket-card {
         background: linear-gradient(135deg, #12402A 0%, #1B4D3E 100%);
         color: #FFFFFF;
@@ -1340,11 +1334,148 @@ if modo_qp == "operador":
                 st.rerun()
 
         st.markdown("---")
-        st.markdown("**Acciones peligrosas**")
-        if st.button("Reiniciar TODOS los turnos (irreversible)"):
-            guardar_datos([])
-            st.warning("Todos los turnos han sido eliminados.")
+        st.markdown("#### Limpieza de Jornada")
+        st.caption(
+            "Opciones para eliminar registros del sistema. Estas acciones no se pueden deshacer."
+        )
+
+        turnos_actuales = cargar_datos()
+        hoy_str = datetime.now().strftime("%Y-%m-%d")
+
+        total_registros = len(turnos_actuales)
+        total_hoy = sum(
+            1 for t in turnos_actuales
+            if (t.get("fecha_hora") or "").startswith(hoy_str)
+        )
+        finalizados_hoy = sum(
+            1 for t in turnos_actuales
+            if (t.get("fecha_hora") or "").startswith(hoy_str)
+            and "FINALIZADO" in (t.get("estado") or "").upper()
+        )
+        finalizados_total = sum(
+            1 for t in turnos_actuales
+            if "FINALIZADO" in (t.get("estado") or "").upper()
+        )
+        activos_total = total_registros - finalizados_total
+
+        c_met1, c_met2, c_met3, c_met4 = st.columns(4)
+        c_met1.metric("Total registros", total_registros)
+        c_met2.metric("Registros de hoy", total_hoy)
+        c_met3.metric("Finalizados hoy", finalizados_hoy)
+        c_met4.metric("Activos (sin finalizar)", activos_total)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        st.markdown("##### Limpiar turnos finalizados de hoy")
+        st.caption(
+            "Elimina únicamente los turnos que ya fueron finalizados por el vigilante "
+            "durante la jornada actual. Se conservan los turnos activos y los de días anteriores."
+        )
+        if st.button(
+            "Limpiar finalizados de hoy",
+            use_container_width=True,
+            key="clean_fin_hoy",
+            disabled=(finalizados_hoy == 0),
+        ):
+            nuevos = [
+                t for t in turnos_actuales
+                if not (
+                    (t.get("fecha_hora") or "").startswith(hoy_str)
+                    and "FINALIZADO" in (t.get("estado") or "").upper()
+                )
+            ]
+            guardar_datos(nuevos)
+            st.success(f"Se eliminaron {finalizados_hoy} turno(s) finalizado(s) de hoy.")
             st.rerun()
+        if finalizados_hoy == 0:
+            st.caption("No hay turnos finalizados hoy.")
+
+        st.markdown("---")
+
+        st.markdown("##### Limpiar todos los turnos de hoy")
+        st.caption(
+            "Elimina todos los turnos registrados en la jornada actual, "
+            "sin importar su estado. Se conservan los turnos de días anteriores."
+        )
+        if st.button(
+            "Limpiar todos los turnos de hoy",
+            use_container_width=True,
+            key="clean_todos_hoy",
+            disabled=(total_hoy == 0),
+        ):
+            nuevos = [
+                t for t in turnos_actuales
+                if not (t.get("fecha_hora") or "").startswith(hoy_str)
+            ]
+            guardar_datos(nuevos)
+            st.success(f"Se eliminaron {total_hoy} turno(s) de la jornada de hoy.")
+            st.rerun()
+        if total_hoy == 0:
+            st.caption("No hay turnos registrados hoy.")
+
+        st.markdown("---")
+
+        st.markdown("##### Limpiar todos los turnos finalizados")
+        st.caption(
+            "Elimina todos los turnos que ya están finalizados en el sistema, "
+            "sin importar la fecha. Se conservan los turnos activos y en espera."
+        )
+        if st.button(
+            "Limpiar todos los finalizados",
+            use_container_width=True,
+            key="clean_fin_total",
+            disabled=(finalizados_total == 0),
+        ):
+            nuevos = [
+                t for t in turnos_actuales
+                if "FINALIZADO" not in (t.get("estado") or "").upper()
+            ]
+            guardar_datos(nuevos)
+            st.success(f"Se eliminaron {finalizados_total} turno(s) finalizado(s).")
+            st.rerun()
+        if finalizados_total == 0:
+            st.caption("No hay turnos finalizados en el sistema.")
+
+        st.markdown("---")
+
+        st.markdown("##### Reiniciar todo el sistema")
+        st.caption(
+            "Elimina TODOS los turnos registrados sin excepción. "
+            "Esta acción es irreversible y requiere confirmación."
+        )
+
+        confirmar_todo = st.checkbox(
+            "Confirmo que deseo eliminar TODOS los turnos del sistema",
+            key="confirm_wipe_all",
+        )
+
+        if st.button(
+            "Reiniciar todos los turnos",
+            use_container_width=True,
+            key="clean_all",
+            disabled=(not confirmar_todo or total_registros == 0),
+        ):
+            guardar_datos([])
+            st.success("Se eliminaron todos los turnos del sistema.")
+            st.rerun()
+
+        st.markdown("---")
+        st.markdown("#### Exportar antes de limpiar")
+        st.caption(
+            "Recomendación: descarga el historial en CSV antes de eliminar registros, "
+            "para conservar evidencia de la jornada."
+        )
+        if total_registros > 0:
+            df_clean = pd.DataFrame(turnos_actuales)
+            csv_clean = df_clean.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "Descargar respaldo del historial completo",
+                data=csv_clean,
+                file_name=f"respaldo_turnos_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="dl_respaldo",
+            )
 
     # --- HISTORIAL ---
     with tab_historial:
