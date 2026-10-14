@@ -35,7 +35,6 @@ st.set_page_config(
 # ==========================================================================
 st.markdown("""
 <style>
-    /* Paleta corporativa */
     :root {
         --zfc-green-dark:  #12402A;
         --zfc-green-main:  #1B4D3E;
@@ -68,13 +67,11 @@ st.markdown("""
         letter-spacing: -0.3px;
     }
 
-    /* Inputs grandes y legibles */
     input, select, textarea {
         font-size: 16px !important;
         padding: 10px !important;
     }
 
-    /* Botones */
     .stButton>button {
         background-color: var(--zfc-green-main);
         color: white;
@@ -95,7 +92,6 @@ st.markdown("""
         color: white;
     }
 
-    /* Tabs */
     .stTabs [data-baseweb="tab-list"] { gap: 6px; }
     .stTabs [data-baseweb="tab"] {
         background-color: #EDF1EE;
@@ -109,7 +105,6 @@ st.markdown("""
         color: #FFFFFF !important;
     }
 
-    /* Tarjeta de tiquet */
     .ticket-card {
         background: linear-gradient(135deg, #12402A 0%, #1B4D3E 100%);
         color: #FFFFFF;
@@ -159,7 +154,6 @@ st.markdown("""
         border-left: 3px solid #FFD966;
     }
 
-    /* Badges de estado */
     .badge {
         display: inline-block;
         padding: 6px 14px;
@@ -175,7 +169,6 @@ st.markdown("""
     .badge-zf         { background: #E0E7FF; color: #233876; border: 1px solid #B4C0E8; }
     .badge-finalizado { background: #EDEDED; color: #4B5563; border: 1px solid #D5D5D5; }
 
-    /* Columnas de tablero */
     .col-header-ing {
         background: var(--zfc-green-main);
         color: #FFFFFF;
@@ -208,7 +201,6 @@ st.markdown("""
         font-size: 14px;
     }
 
-    /* Tarjetas vehículo en tablero */
     .card-ingreso {
         background: #FFFFFF;
         border: 1px solid #B8D4C5;
@@ -266,7 +258,6 @@ st.markdown("""
         font-weight: 600;
     }
 
-    /* Tarjetas de selección de rol (home) */
     .role-card {
         background: #FFFFFF;
         border: 1px solid var(--zfc-border);
@@ -294,7 +285,6 @@ st.markdown("""
         line-height: 1.5;
     }
 
-    /* Header institucional */
     .inst-header {
         display: flex;
         align-items: center;
@@ -317,7 +307,6 @@ st.markdown("""
         letter-spacing: 0.5px;
     }
 
-    /* Métricas */
     div[data-testid="stMetricValue"] {
         color: var(--zfc-green-dark);
         font-weight: 700;
@@ -328,13 +317,11 @@ st.markdown("""
         font-weight: 600;
     }
 
-    /* Inputs en el panel del operador */
     .stTextInput>div>div>input,
     .stSelectbox>div>div>select {
         border-color: var(--zfc-border);
     }
 
-    /* Ocultar header de Streamlit en modo pantalla */
     .screen-mode header { display: none !important; }
     .screen-mode [data-testid="stToolbar"] { display: none !important; }
     .screen-mode [data-testid="stDecoration"] { display: none !important; }
@@ -471,7 +458,6 @@ def generar_qr_png(url: str):
         return None
 
 def render_header_institucional():
-    """Header con logos corporativos si existen."""
     c1, c2, c3 = st.columns([1.5, 3, 1.5])
     with c1:
         for fn in ["LOGO ZFS-ZFC.jpeg", "LOGO ZFS-ZFC.jpg", "LOGO ZFS-ZFC.png"]:
@@ -505,7 +491,6 @@ if "mi_turno_id" not in st.session_state:
 try:
     qp = st.query_params
     modo_qp = (qp.get("modo") or "").strip().lower()
-    # Recuperar turno activo si viene en la URL
     if st.session_state.mi_turno_id is None and "t" in qp:
         st.session_state.mi_turno_id = qp.get("t")
 except Exception:
@@ -518,7 +503,6 @@ CONFIG = cargar_config()
 # =============   MODO: PANTALLA TV (sin login, solo lectura)   ============
 # ==========================================================================
 if modo_qp == "pantalla":
-    # Refresco automático cada 4 segundos
     @st.fragment(run_every=4)
     def pantalla_publica():
         turnos = cargar_datos()
@@ -536,7 +520,6 @@ if modo_qp == "pantalla":
         ingresos = [t for t in autorizados if "INGRESAR" in (t.get("estado") or "").upper()]
         salidas = [t for t in autorizados if "SALIR" in (t.get("estado") or "").upper()]
 
-        # Header corporativo
         c1, c2, c3 = st.columns([1, 3, 1])
         with c1:
             for fn in ["LOGO ZFS-ZFC.jpeg", "LOGO ZFS-ZFC.png"]:
@@ -619,7 +602,6 @@ if modo_qp == "conductor":
         if st.session_state.mi_turno_id:
             mi_turno = buscar_turno(turnos, st.session_state.mi_turno_id)
 
-        # --- SI TIENE TURNO ACTIVO ---
         if mi_turno and "FINALIZADO" not in (mi_turno.get("estado") or "").upper():
 
             @st.fragment(run_every=5)
@@ -629,7 +611,6 @@ if modo_qp == "conductor":
                 if not actual:
                     st.warning("Tu turno ya no está disponible.")
                     return
-                est_up = (actual.get("estado") or "").upper()
                 msg = actual.get("mensaje_admin") or "En espera de autorización"
 
                 st.markdown(f"""
@@ -654,7 +635,6 @@ if modo_qp == "conductor":
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Mostrar hora de confirmación si aplica
                 if actual.get("fecha_ingreso_zf"):
                     st.markdown(
                         f"<div style='text-align:center; color:#1B4D3E; font-weight:600; "
@@ -687,7 +667,6 @@ if modo_qp == "conductor":
                         pass
                     st.rerun()
 
-        # --- NO TIENE TURNO: FORMULARIO ---
         else:
             st.markdown("Completa tus datos para asignarte un turno.")
             st.caption("Los campos con (*) son obligatorios")
@@ -798,14 +777,18 @@ if modo_qp == "vigilante":
                         st.error("Credenciales incorrectas.")
         st.stop()
 
-    # Header con botón cerrar sesión
     col_h1, col_h2 = st.columns([4, 1])
     with col_h1:
         st.markdown("### Portal del Vigilante")
         st.caption(f"Sesión activa · {ahora_str()}")
     with col_h2:
+        # 🔧 FIX: cerrar sesión limpia el modo de la URL
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_vig"):
             st.session_state.auth_vigilante = False
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
             st.rerun()
 
     st.markdown("---")
@@ -814,7 +797,6 @@ if modo_qp == "vigilante":
     def panel_vigilante():
         turnos = cargar_datos()
 
-        # Check IN: autorizados para ingresar sin fecha_ingreso_zf
         pendientes_ing = [
             t for t in turnos
             if "INGRESAR" in (t.get("estado") or "").upper()
@@ -822,7 +804,6 @@ if modo_qp == "vigilante":
             and "FINALIZADO" not in (t.get("estado") or "").upper()
             and not t.get("fecha_ingreso_zf")
         ]
-        # Check OUT: autorizados para salir sin fecha_salida_zf
         pendientes_sal = [
             t for t in turnos
             if "SALIR" in (t.get("estado") or "").upper()
@@ -854,7 +835,6 @@ if modo_qp == "vigilante":
 
         col_i, col_s = st.columns(2)
 
-        # ============ CHECK IN — INGRESOS ============
         with col_i:
             st.markdown('<div class="col-header-ing">CHECK IN · INGRESOS</div>', unsafe_allow_html=True)
             if not pendientes_ing:
@@ -892,7 +872,6 @@ if modo_qp == "vigilante":
                                     st.success(f"Ingreso confirmado para {t['placa']} a las {hora_conf}")
                                     st.rerun()
 
-        # ============ CHECK OUT — SALIDAS ============
         with col_s:
             st.markdown('<div class="col-header-sal">CHECK OUT · SALIDAS</div>', unsafe_allow_html=True)
             if not pendientes_sal:
@@ -961,8 +940,13 @@ if modo_qp == "operador":
         st.markdown("### Panel del Operador")
         st.caption(f"Sesión activa · {ahora_str()}")
     with col_h2:
+        # 🔧 FIX: cerrar sesión limpia el modo de la URL
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_op"):
             st.session_state.auth_operador = False
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
             st.rerun()
 
     st.markdown("---")
@@ -1168,34 +1152,171 @@ if modo_qp == "operador":
                     """, unsafe_allow_html=True)
 
     # -----------------------------------------------------------------
-    # TAB QR
+    # TAB QR — Centro de Códigos QR
     # -----------------------------------------------------------------
     with tab_qr:
-        st.markdown("#### Código QR del Portal del Conductor")
-        st.caption("Imprime este código y ubícalo en la entrada. Los conductores pueden escanearlo con su celular.")
+        st.markdown("#### Centro de Códigos QR")
+        st.caption(
+            "Configura la URL base de tu aplicación y descarga los códigos QR "
+            "que corresponden a cada portal. Imprímelos y ubícalos en los puntos de acceso."
+        )
+
+        # ---------------------------------------------------------
+        # Paso 1: URL base
+        # ---------------------------------------------------------
+        st.markdown("##### Paso 1 · Configura la URL base")
+        st.caption(
+            "Es la URL pública de tu aplicación en Streamlit Cloud. "
+            "Ejemplo: `https://turno-de-vehiculos-zona-franca.streamlit.app` (sin barra al final)"
+        )
+
+        base_url_actual = CONFIG.get("url_base", "").strip().rstrip("/")
+
+        with st.form("form_url_base_qr"):
+            base_url_in = st.text_input(
+                "URL base de la aplicación",
+                value=base_url_actual,
+                placeholder="https://tu-app.streamlit.app",
+            )
+            if st.form_submit_button("Guardar URL base", use_container_width=True):
+                nuevo_cfg = cargar_config()
+                nuevo_cfg["url_base"] = base_url_in.strip().rstrip("/")
+                guardar_config(nuevo_cfg)
+                st.success("URL base actualizada.")
+                st.rerun()
 
         base_url = CONFIG.get("url_base", "").strip().rstrip("/")
-        if not base_url:
-            st.warning("Debes configurar la URL base en la pestaña **Configuración** para generar el QR.")
-            st.info("Ejemplo: `https://tu-app.streamlit.app`")
-        else:
-            url_conductor = f"{base_url}/?modo=conductor"
-            st.markdown(f"**URL destino:** `{url_conductor}`")
 
-            qr_bytes = generar_qr_png(url_conductor)
-            if qr_bytes:
-                c1, c2, c3 = st.columns([1, 1, 1])
-                with c2:
-                    st.image(qr_bytes, caption="Escanéame para enturnarte", use_container_width=True)
-                st.download_button(
-                    "Descargar QR en PNG",
-                    data=qr_bytes,
-                    file_name="qr_conductor_zfc.png",
-                    mime="image/png",
-                    use_container_width=True,
-                )
-            else:
-                st.error("No se pudo generar el QR. Verifica que la librería `qrcode[pil]` esté instalada.")
+        st.markdown("---")
+
+        # ---------------------------------------------------------
+        # Paso 2: QR
+        # ---------------------------------------------------------
+        if not base_url:
+            st.warning("Configura primero la URL base (paso 1) para generar los códigos QR.")
+        elif not HAS_QR:
+            st.error(
+                "La librería **qrcode[pil]** no está instalada. "
+                "Agrégala a `requirements.txt` y vuelve a deployar."
+            )
+        else:
+            st.markdown("##### Paso 2 · Descarga e imprime los códigos QR")
+
+            portales = [
+                {
+                    "clave": "conductor",
+                    "titulo": "CONDUCTOR",
+                    "subtitulo": "Punto de enturnamiento",
+                    "descripcion": (
+                        "El conductor escanea este QR y accede directamente al formulario "
+                        "de registro. Solo ve su propio portal, no puede acceder a nada más."
+                    ),
+                    "color_hex": "#1B4D3E",
+                    "archivo_png": "qr_conductor_zfc.png",
+                },
+                {
+                    "clave": "vigilante",
+                    "titulo": "VIGILANTE",
+                    "subtitulo": "Punto de control / garita",
+                    "descripcion": (
+                        "El vigilante escanea este QR y accede a su portal de check-in y "
+                        "check-out. Requiere credenciales para ingresar."
+                    ),
+                    "color_hex": "#0D4A56",
+                    "archivo_png": "qr_vigilante_zfc.png",
+                },
+                {
+                    "clave": "pantalla",
+                    "titulo": "PANTALLA TV",
+                    "subtitulo": "Televisor informativo",
+                    "descripcion": (
+                        "Abre este enlace en las pantallas de la Zona Franca para mostrar "
+                        "en vivo los vehículos autorizados. Sin interacción, solo lectura."
+                    ),
+                    "color_hex": "#12402A",
+                    "archivo_png": "qr_pantalla_zfc.png",
+                },
+            ]
+
+            cols_qr = st.columns(3)
+
+            for idx, portal in enumerate(portales):
+                url_portal = f"{base_url}/?modo={portal['clave']}"
+                qr_bytes = generar_qr_png(url_portal)
+
+                with cols_qr[idx]:
+                    st.markdown(f"""
+                    <div style="
+                        background:#FFFFFF;
+                        border: 1px solid #E1E8E5;
+                        border-top: 4px solid {portal['color_hex']};
+                        border-radius: 10px;
+                        padding: 18px 16px 8px 16px;
+                        text-align: center;
+                        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+                        margin-bottom: 12px;
+                    ">
+                        <div style="color:{portal['color_hex']}; font-weight:700;
+                                    font-size:14px; letter-spacing:2px;">
+                            {portal['titulo']}
+                        </div>
+                        <div style="color:#6B7280; font-size:11px; margin-top:2px;
+                                    letter-spacing:1px;">
+                            {portal['subtitulo']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    if qr_bytes:
+                        st.image(qr_bytes, use_container_width=True)
+                    else:
+                        st.error("No se pudo generar el QR.")
+
+                    st.code(url_portal, language=None)
+                    st.caption(portal["descripcion"])
+
+                    if qr_bytes:
+                        st.download_button(
+                            f"Descargar QR · {portal['titulo'].title()}",
+                            data=qr_bytes,
+                            file_name=portal["archivo_png"],
+                            mime="image/png",
+                            use_container_width=True,
+                            key=f"dl_qr_{portal['clave']}",
+                        )
+
+                    st.markdown(
+                        f"<a href='{url_portal}' target='_blank' "
+                        f"style='display:block; text-align:center; margin-top:6px; "
+                        f"font-size:12px; color:{portal['color_hex']}; text-decoration:none; "
+                        f"font-weight:600;'>"
+                        f"Probar enlace en pestaña nueva →</a>",
+                        unsafe_allow_html=True,
+                    )
+
+            st.markdown("---")
+
+            with st.expander("Ver todas las URLs generadas (para copiar)"):
+                st.markdown("**Copia y pega estas URLs donde las necesites:**")
+                for portal in portales:
+                    url_p = f"{base_url}/?modo={portal['clave']}"
+                    st.markdown(f"**{portal['titulo']}**")
+                    st.code(url_p, language=None)
+
+                st.markdown("**SELECTOR (home)**")
+                st.code(base_url, language=None)
+
+            with st.expander("Recomendaciones de uso"):
+                st.markdown("""
+                - **Conductor**: imprime el QR en tamaño grande (mínimo 20×20 cm) y ubícalo
+                  visible en la caseta de enturnamiento, a la altura de la ventanilla del vehículo.
+                - **Vigilante**: imprime el QR en tamaño mediano y ubícalo en la garita de control.
+                  También puedes compartirlo con el enlace de WhatsApp de cada vigilante.
+                - **Pantalla TV**: no requiere imprimir QR. Solo abre el enlace directamente en el
+                  navegador del televisor y presiona `F11` para pantalla completa.
+                - **URL base**: si cambias de dominio, solo actualiza este campo y los QR se
+                  regeneran solos.
+                """)
 
     # -----------------------------------------------------------------
     # TAB CONFIG
@@ -1332,7 +1453,10 @@ with c1:
     </div>
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    st.link_button("Ingresar como Conductor", "?modo=conductor", use_container_width=True)
+    # 🔧 FIX: st.button + query_params en lugar de link_button
+    if st.button("Ingresar como Conductor", use_container_width=True, key="home_btn_cond"):
+        st.query_params["modo"] = "conductor"
+        st.rerun()
 
 with c2:
     st.markdown("""
@@ -1342,7 +1466,9 @@ with c2:
     </div>
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    st.link_button("Ingresar como Vigilante", "?modo=vigilante", use_container_width=True)
+    if st.button("Ingresar como Vigilante", use_container_width=True, key="home_btn_vig"):
+        st.query_params["modo"] = "vigilante"
+        st.rerun()
 
 with c3:
     st.markdown("""
@@ -1352,7 +1478,9 @@ with c3:
     </div>
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    st.link_button("Ingresar como Operador", "?modo=operador", use_container_width=True)
+    if st.button("Ingresar como Operador", use_container_width=True, key="home_btn_op"):
+        st.query_params["modo"] = "operador"
+        st.rerun()
 
 with c4:
     st.markdown("""
@@ -1362,31 +1490,9 @@ with c4:
     </div>
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    st.link_button("Abrir Pantalla Pública", "?modo=pantalla", use_container_width=True)
-
-st.markdown("---")
-
-# Panel QR para el operador (si hay URL base configurada)
-base_url = CONFIG.get("url_base", "").strip().rstrip("/")
-if base_url and HAS_QR:
-    st.markdown("<h4 style='text-align:center;'>Acceso rápido del Conductor vía QR</h4>", unsafe_allow_html=True)
-    url_conductor = f"{base_url}/?modo=conductor"
-    qr_bytes = generar_qr_png(url_conductor)
-    if qr_bytes:
-        cL, cC, cR = st.columns([1, 1, 1])
-        with cC:
-            st.image(qr_bytes, caption="Escanear para enturnarse", use_container_width=True)
-else:
-    if not base_url:
-        st.info(
-            "Para habilitar el QR de acceso rápido del conductor, "
-            "configura la URL base desde el **Panel del Operador → Configuración**."
-        )
-    elif not HAS_QR:
-        st.info(
-            "La librería `qrcode` no está instalada. "
-            "Agrégala con `pip install qrcode[pil]` para habilitar los códigos QR."
-        )
+    if st.button("Abrir Pantalla Pública", use_container_width=True, key="home_btn_pant"):
+        st.query_params["modo"] = "pantalla"
+        st.rerun()
 
 st.markdown("---")
 st.caption("Zona Franca de Cúcuta · Operada por Zona Franca Santander · Sistema de Automatización Aduanera")
