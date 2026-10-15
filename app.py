@@ -1304,37 +1304,26 @@ if modo_qp == "operador":
         )
 
         turnos_actuales = cargar_datos()
-        hoy_str = datetime.now().strftime("%Y-%m-%d")
-
         total_registros = len(turnos_actuales)
-        total_hoy = sum(
-            1 for t in turnos_actuales
-            if (t.get("fecha_hora") or "").startswith(hoy_str)
-        )
 
         c_met1, c_met2 = st.columns(2)
         c_met1.metric("Total registros", total_registros)
-        c_met2.metric("Registros de hoy", total_hoy)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        st.markdown("##### Limpiar todos los turnos de hoy")
+        st.markdown("##### Limpiar turnos")
         st.caption(
             "En esta opción todo lo que se haya realizado quedará completamente eliminado, "
             "es decir, todo quedará limpio para iniciar una nueva jornada laboral y que los "
             "conductores se puedan enturnar nuevamente."
         )
         if st.button(
-            "Limpiar todos los turnos de hoy",
+            "Limpiar",
             use_container_width=True,
             key="clean_todos_hoy",
         ):
-            nuevos = [
-                t for t in turnos_actuales
-                if not (t.get("fecha_hora") or "").startswith(hoy_str)
-            ]
-            guardar_datos(nuevos)
-            st.success("Se eliminaron los turnos de la jornada de hoy. Sistema limpio para iniciar nueva jornada.")
+            guardar_datos([])
+            st.success("Se eliminaron todos los turnos. Sistema limpio para iniciar nueva jornada.")
             st.rerun()
 
         st.markdown("---")
@@ -1434,7 +1423,7 @@ with c1:
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Ingresar como Conductor", use_container_width=True, key="home_btn_cond"):
-        st.query_params["modo"] = "conductor"
+        st.query_params["modo"]> "conductor"
         st.rerun()
 
 with c2:
