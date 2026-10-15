@@ -760,7 +760,7 @@ if modo_qp == "conductor":
                             st.rerun()
 
         st.markdown("---")
-        with st.expander("Recuperar mi turno por placa"):
+        with st.expander("Visualizar estado de mi placa"):
             p_buscar = st.text_input("Ingresa tu placa", key="rec_placa").upper().strip()
             if st.button("Buscar", key="btn_rec"):
                 if not p_buscar:
