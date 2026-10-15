@@ -855,6 +855,7 @@ if modo_qp == "vigilante":
                 for t in pendientes_ing:
                     with st.expander(f"{t['placa']} · {t['id_turno']}", expanded=False):
                         st.markdown(f"**Conductor:** {t.get('nombre','')} — C.C. {t.get('cedula','')}")
+                        st.markdown(f"**Teléfono:** {t.get('telefono','—')}")
                         st.markdown(f"**Bodega:** {t.get('bodega','')}")
                         st.caption(f"Registrado: {fecha_legible(t.get('fecha_hora',''))}")
                         if t.get("mensaje_admin"):
@@ -882,6 +883,7 @@ if modo_qp == "vigilante":
                 for t in pendientes_sal:
                     with st.expander(f"{t['placa']} · {t['id_turno']}", expanded=False):
                         st.markdown(f"**Conductor:** {t.get('nombre','')} — C.C. {t.get('cedula','')}")
+                        st.markdown(f"**Teléfono:** {t.get('telefono','—')}")
                         st.markdown(f"**Bodega:** {t.get('bodega','')}")
                         if t.get("fecha_ingreso_zf"):
                             st.caption(f"Ingresó: {fecha_legible(t['fecha_ingreso_zf'])}")
@@ -998,7 +1000,6 @@ if modo_qp == "operador":
                             index=0 if turno_sel.get("tipo_movimiento") == "Ingresar" else 1,
                         )
 
-                        # Estados permitidos actualizados (sin 'en zona franca' ni 'finalizado')
                         estados_posibles = [
                             "En Espera",
                             "AUTORIZADO PARA INGRESAR",
@@ -1374,6 +1375,12 @@ if modo_qp == "operador":
 
             st.markdown("---")
 
+            # Aplicar formato legible de fecha y hora a las columnas de autorizaciones
+            df["fecha_hora"] = df["fecha_hora"].apply(fecha_legible)
+            df["fecha_autorizacion"] = df["fecha_autorizacion"].apply(fecha_legible)
+            df["fecha_ingreso_zf"] = df["fecha_ingreso_zf"].apply(fecha_legible)
+            df["fecha_salida_zf"] = df["fecha_salida_zf"].apply(fecha_legible)
+
             cols = [
                 "id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora",
                 "bodega", "tipo_movimiento", "estado", "mensaje_admin",
@@ -1393,9 +1400,9 @@ if modo_qp == "operador":
                 "tipo_movimiento": "Movimiento",
                 "estado": "Estado",
                 "mensaje_admin": "Mensaje",
-                "fecha_autorizacion": "Autorizado",
-                "fecha_ingreso_zf": "Ingreso ZF",
-                "fecha_salida_zf": "Salida ZF",
+                "fecha_autorizacion": "Autorizado Operador",
+                "fecha_ingreso_zf": "Ingreso Vigilante",
+                "fecha_salida_zf": "Salida Vigilante",
                 "observaciones_vigilante": "Observaciones",
             })
 
