@@ -845,21 +845,6 @@ if modo_qp == "vigilante":
 
         st.markdown("---")
 
-        CHECKLIST_ING = [
-            ("placa_correcta", "Placa del vehículo corresponde"),
-            ("documentos", "Documentos del conductor verificados"),
-            ("sellos", "Sellos / precintos intactos"),
-            ("carga", "Carga coincide con manifiesto"),
-            ("sin_novedad", "Sin novedades de seguridad"),
-        ]
-        CHECKLIST_SAL = [
-            ("placa_correcta", "Placa del vehículo corresponde"),
-            ("documentos", "Documentos del conductor verificados"),
-            ("carga_completa", "Carga completa / sellada"),
-            ("sin_novedad", "Sin novedades de seguridad"),
-            ("salida_autorizada", "Salida autorizada por operador"),
-        ]
-
         col_i, col_s = st.columns(2)
 
         with col_i:
@@ -875,29 +860,19 @@ if modo_qp == "vigilante":
                         if t.get("mensaje_admin"):
                             st.markdown(f"**Mensaje:** {t['mensaje_admin']}")
 
-                        with st.form(f"form_in_{t['id_turno']}"):
-                            checks = {}
-                            for k, label in CHECKLIST_ING:
-                                checks[k] = st.checkbox(label, key=f"in_{t['id_turno']}_{k}")
-                            obs = st.text_area("Observaciones (opcional)", key=f"obs_in_{t['id_turno']}", placeholder="Si hay alguna novedad, descríbela aquí")
-
-                            if st.form_submit_button("Confirmar Ingreso", use_container_width=True):
-                                if not all(checks.values()):
-                                    st.error("Debes marcar todos los ítems del checklist.")
-                                else:
-                                    hora_conf = ahora_str()
-                                    todos = cargar_datos()
-                                    for x in todos:
-                                        if x["id_turno"] == t["id_turno"]:
-                                            x["checklist_ingreso"] = checks
-                                            x["observaciones_vigilante"] = obs
-                                            x["fecha_ingreso_zf"] = hora_conf
-                                            x["estado"] = "EN ZONA FRANCA"
-                                            x["mostrar_en_pantalla"] = False
-                                            break
-                                    guardar_datos(todos)
-                                    st.success(f"Ingreso confirmado para {t['placa']} a las {hora_conf}")
-                                    st.rerun()
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("Ingreso Autorizado", key=f"btn_in_{t['id_turno']}", use_container_width=True):
+                            hora_conf = ahora_str()
+                            todos = cargar_datos()
+                            for x in todos:
+                                if x["id_turno"] == t["id_turno"]:
+                                    x["fecha_ingreso_zf"] = hora_conf
+                                    x["estado"] = "EN ZONA FRANCA"
+                                    x["mostrar_en_pantalla"] = False
+                                    break
+                            guardar_datos(todos)
+                            st.success(f"Ingreso autorizado para {t['placa']} a las {hora_conf}")
+                            st.rerun()
 
         with col_s:
             st.markdown('<div class="col-header-sal">CHECK OUT · SALIDAS</div>', unsafe_allow_html=True)
@@ -913,30 +888,19 @@ if modo_qp == "vigilante":
                         if t.get("mensaje_admin"):
                             st.markdown(f"**Mensaje:** {t['mensaje_admin']}")
 
-                        with st.form(f"form_out_{t['id_turno']}"):
-                            checks = {}
-                            for k, label in CHECKLIST_SAL:
-                                checks[k] = st.checkbox(label, key=f"out_{t['id_turno']}_{k}")
-                            obs = st.text_area("Observaciones (opcional)", key=f"obs_out_{t['id_turno']}", placeholder="Si hay alguna novedad, descríbela aquí")
-
-                            if st.form_submit_button("Confirmar Salida", use_container_width=True):
-                                if not all(checks.values()):
-                                    st.error("Debes marcar todos los ítems del checklist.")
-                                else:
-                                    hora_conf = ahora_str()
-                                    todos = cargar_datos()
-                                    for x in todos:
-                                        if x["id_turno"] == t["id_turno"]:
-                                            x["checklist_salida"] = checks
-                                            obs_prev = x.get("observaciones_vigilante") or ""
-                                            x["observaciones_vigilante"] = (obs_prev + " | " + obs).strip(" |")
-                                            x["fecha_salida_zf"] = hora_conf
-                                            x["estado"] = "FINALIZADO"
-                                            x["mostrar_en_pantalla"] = False
-                                            break
-                                    guardar_datos(todos)
-                                    st.success(f"Salida confirmada para {t['placa']} a las {hora_conf}")
-                                    st.rerun()
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("Salida Autorizada", key=f"btn_out_{t['id_turno']}", use_container_width=True):
+                            hora_conf = ahora_str()
+                            todos = cargar_datos()
+                            for x in todos:
+                                if x["id_turno"] == t["id_turno"]:
+                                    x["fecha_salida_zf"] = hora_conf
+                                    x["estado"] = "FINALIZADO"
+                                    x["mostrar_en_pantalla"] = False
+                                    break
+                            guardar_datos(todos)
+                            st.success(f"Salida autorizada para {t['placa']} a las {hora_conf}")
+                            st.rerun()
 
     panel_vigilante()
     st.stop()
@@ -1034,12 +998,11 @@ if modo_qp == "operador":
                             index=0 if turno_sel.get("tipo_movimiento") == "Ingresar" else 1,
                         )
 
+                        # Estados permitidos actualizados (sin 'en zona franca' ni 'finalizado')
                         estados_posibles = [
                             "En Espera",
                             "AUTORIZADO PARA INGRESAR",
                             "AUTORIZADO PARA SALIR",
-                            "EN ZONA FRANCA",
-                            "FINALIZADO",
                         ]
                         estado_actual = turno_sel.get("estado", "En Espera")
                         idx_estado = estados_posibles.index(estado_actual) if estado_actual in estados_posibles else 0
@@ -1336,7 +1299,7 @@ if modo_qp == "operador":
         st.markdown("---")
         st.markdown("#### Limpieza de Jornada")
         st.caption(
-            "Opciones para eliminar registros del sistema. Estas acciones no se pueden deshacer."
+            "Opción para reiniciar la jornada laboral actual y dejar todo limpio para nuevos registros."
         )
 
         turnos_actuales = cargar_datos()
@@ -1347,55 +1310,18 @@ if modo_qp == "operador":
             1 for t in turnos_actuales
             if (t.get("fecha_hora") or "").startswith(hoy_str)
         )
-        finalizados_hoy = sum(
-            1 for t in turnos_actuales
-            if (t.get("fecha_hora") or "").startswith(hoy_str)
-            and "FINALIZADO" in (t.get("estado") or "").upper()
-        )
-        finalizados_total = sum(
-            1 for t in turnos_actuales
-            if "FINALIZADO" in (t.get("estado") or "").upper()
-        )
-        activos_total = total_registros - finalizados_total
 
-        c_met1, c_met2, c_met3, c_met4 = st.columns(4)
+        c_met1, c_met2 = st.columns(2)
         c_met1.metric("Total registros", total_registros)
         c_met2.metric("Registros de hoy", total_hoy)
-        c_met3.metric("Finalizados hoy", finalizados_hoy)
-        c_met4.metric("Activos (sin finalizar)", activos_total)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        st.markdown("##### Limpiar turnos finalizados de hoy")
-        st.caption(
-            "Elimina únicamente los turnos que ya fueron finalizados por el vigilante "
-            "durante la jornada actual. Se conservan los turnos activos y los de días anteriores."
-        )
-        if st.button(
-            "Limpiar finalizados de hoy",
-            use_container_width=True,
-            key="clean_fin_hoy",
-            disabled=(finalizados_hoy == 0),
-        ):
-            nuevos = [
-                t for t in turnos_actuales
-                if not (
-                    (t.get("fecha_hora") or "").startswith(hoy_str)
-                    and "FINALIZADO" in (t.get("estado") or "").upper()
-                )
-            ]
-            guardar_datos(nuevos)
-            st.success(f"Se eliminaron {finalizados_hoy} turno(s) finalizado(s) de hoy.")
-            st.rerun()
-        if finalizados_hoy == 0:
-            st.caption("No hay turnos finalizados hoy.")
-
-        st.markdown("---")
-
         st.markdown("##### Limpiar todos los turnos de hoy")
         st.caption(
-            "Elimina todos los turnos registrados en la jornada actual, "
-            "sin importar su estado. Se conservan los turnos de días anteriores."
+            "En esta opción todo lo que se haya realizado quedará completamente eliminado, "
+            "es decir, todo quedará limpio para iniciar una nueva jornada laboral y que los "
+            "conductores se puedan enturnar nuevamente."
         )
         if st.button(
             "Limpiar todos los turnos de hoy",
@@ -1408,61 +1334,15 @@ if modo_qp == "operador":
                 if not (t.get("fecha_hora") or "").startswith(hoy_str)
             ]
             guardar_datos(nuevos)
-            st.success(f"Se eliminaron {total_hoy} turno(s) de la jornada de hoy.")
+            st.success(f"Se eliminaron {total_hoy} turno(s) de la jornada de hoy. Sistema limpio para iniciar nueva jornada.")
             st.rerun()
         if total_hoy == 0:
             st.caption("No hay turnos registrados hoy.")
 
         st.markdown("---")
-
-        st.markdown("##### Limpiar todos los turnos finalizados")
-        st.caption(
-            "Elimina todos los turnos que ya están finalizados en el sistema, "
-            "sin importar la fecha. Se conservan los turnos activos y en espera."
-        )
-        if st.button(
-            "Limpiar todos los finalizados",
-            use_container_width=True,
-            key="clean_fin_total",
-            disabled=(finalizados_total == 0),
-        ):
-            nuevos = [
-                t for t in turnos_actuales
-                if "FINALIZADO" not in (t.get("estado") or "").upper()
-            ]
-            guardar_datos(nuevos)
-            st.success(f"Se eliminaron {finalizados_total} turno(s) finalizado(s).")
-            st.rerun()
-        if finalizados_total == 0:
-            st.caption("No hay turnos finalizados en el sistema.")
-
-        st.markdown("---")
-
-        st.markdown("##### Reiniciar todo el sistema")
-        st.caption(
-            "Elimina TODOS los turnos registrados sin excepción. "
-            "Esta acción es irreversible y requiere confirmación."
-        )
-
-        confirmar_todo = st.checkbox(
-            "Confirmo que deseo eliminar TODOS los turnos del sistema",
-            key="confirm_wipe_all",
-        )
-
-        if st.button(
-            "Reiniciar todos los turnos",
-            use_container_width=True,
-            key="clean_all",
-            disabled=(not confirmar_todo or total_registros == 0),
-        ):
-            guardar_datos([])
-            st.success("Se eliminaron todos los turnos del sistema.")
-            st.rerun()
-
-        st.markdown("---")
         st.markdown("#### Exportar antes de limpiar")
         st.caption(
-            "Recomendación: descarga el historial en CSV antes de eliminar registros, "
+            "Recomendación: descarga el historial en CSV antes de limpiar, "
             "para conservar evidencia de la jornada."
         )
         if total_registros > 0:
@@ -1558,7 +1438,7 @@ with c2:
     st.markdown("""
     <div class="role-card">
         <div class="role-titulo">VIGILANTE</div>
-        <div class="role-desc">Verifica el ingreso y salida de vehículos con checklist.</div>
+        <div class="role-desc">Autoriza el ingreso y salida de vehículos con un solo clic.</div>
     </div>
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
