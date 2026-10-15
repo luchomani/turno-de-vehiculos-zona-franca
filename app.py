@@ -1423,7 +1423,7 @@ with c1:
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Ingresar como Conductor", use_container_width=True, key="home_btn_cond"):
-        st.query_params["modo"]> "conductor"
+        st.query_params["modo"] = "conductor"
         st.rerun()
 
 with c2:
