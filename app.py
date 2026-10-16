@@ -13,13 +13,18 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 try:
     import qrcode
     HAS_QR = True
 except ImportError:
     HAS_QR = False
+
+try:
+    from streamlit_js_eval import get_geolocation
+    HAS_GEO = True
+except ImportError:
+    HAS_GEO = False
 
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
@@ -353,7 +358,9 @@ DEFAULT_CONFIG = {
     "usuario_vigilante": "Vigilante",
     "contrasena_vigilante": "VIGILANTE2026",
     "url_base": "",
-    "radio_geofence_km": 15.0,
+    "radio_geofence_km": 3.0,
+    "zfc_lat": 7.90750,
+    "zfc_lon": -72.50472,
     "bodegas": [
         "Bodega Principal / Generica",
         "Alfranca Cucuta S.A.S.",
@@ -417,9 +424,6 @@ def guardar_config(cfg):
 # ==========================================================================
 # HELPERS Y GEOFENCING
 # ==========================================================================
-ZFC_LAT = 7.8939
-ZFC_LON = -72.5078
-
 def calcular_distancia_km(lat1, lon1, lat2, lon2):
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
@@ -620,7 +624,6 @@ if modo_qp == "conductor":
     render_header_institucional()
     st.markdown("<h3 style='text-align:center;'>Portal del Conductor</h3>", unsafe_allow_html=True)
 
-    # Mensaje actualizado exactamente como lo pediste
     st.markdown("""
     <div style="
         background: linear-gradient(135deg, #E6F0EB 0%, #D1E7DD 100%);
@@ -713,141 +716,180 @@ if modo_qp == "conductor":
                     st.rerun()
 
         else:
-            lat_param = qp.get("lat")
-            lon_param = qp.get("lon")
+            # ==============================================================
+            # Verificación de ubicación GPS
+            # ==============================================================
+            if not HAS_GEO:
+                st.error(
+                    "Falta la librería **streamlit-js-eval**. "
+                    "Agrégala a `requirements.txt` y redeploya la aplicación."
+                )
+                st.stop()
 
-            if not lat_param or not lon_param:
-                st.info("📍 Verificando ubicación GPS para permitir el registro...")
-                components.html("""
-                <div style="text-align:center; font-family:sans-serif; padding:15px; color:#1B4D3E;">
-                    <b>Obteniendo tu ubicación exacta...</b> Por favor permite el acceso al GPS en tu navegador.
-                </div>
-                <script>
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(function(position) {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        const url = window.parent.location.href.split('?')[0];
-                        const params = new URLSearchParams(window.parent.location.search);
-                        params.set('lat', lat);
-                        params.set('lon', lon);
-                        params.set('modo', 'conductor');
-                        window.parent.location.href = url + '?' + params.toString();
-                    }, function(error) {
-                        alert("⚠️ Es obligatorio permitir el acceso a la ubicación GPS para enturnarte.");
-                    }, {timeout: 10000});
-                } else {
-                    alert("Tu navegador no soporta geolocalización.");
-                }
-                </script>
-                """, height=80)
-            else:
-                try:
-                    user_lat = float(lat_param)
-                    user_lon = float(lon_param)
-                    distancia = calcular_distancia_km(user_lat, user_lon, ZFC_LAT, ZFC_LON)
-                    radio_max = float(CONFIG.get("radio_geofence_km", 15.0))
+            if "geo_data" not in st.session_state:
+                st.session_state.geo_data = None
+            if "geo_error" not in st.session_state:
+                st.session_state.geo_error = None
+            if "geo_retry" not in st.session_state:
+                st.session_state.geo_retry = 0
 
-                    if distancia > radio_max:
-                        st.error(
-                            f"⚠️ **Acceso Restringido por Ubicación**\n\n"
-                            f"Te encuentras a **{distancia:.1f} km** de la Zona Franca de Cúcuta. "
-                            f"El sistema solo permite enturnarse a una distancia máxima de {radio_max:.0f} km. "
-                            f"Acércate a las instalaciones para realizar tu registro."
+            # -------- Estado 1: Esperando ubicación --------
+            if st.session_state.geo_data is None and st.session_state.geo_error is None:
+                st.info("📍 Verificando tu ubicación GPS... Por favor permite el acceso cuando el navegador lo solicite.")
+
+                loc = get_geolocation(component_key=f"geo_{st.session_state.geo_retry}")
+
+                if loc is not None:
+                    try:
+                        if isinstance(loc, dict) and "coords" in loc:
+                            st.session_state.geo_data = loc["coords"]
+                        else:
+                            st.session_state.geo_error = "No se pudo obtener la ubicación."
+                    except Exception:
+                        st.session_state.geo_error = "Error procesando la ubicación."
+                    st.rerun()
+                else:
+                    st.caption("Si ya otorgaste permisos, espera unos segundos. Si rechazaste, presiona el botón de abajo.")
+                    if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_1"):
+                        st.session_state.geo_retry += 1
+                        st.rerun()
+                    st.stop()
+
+            # -------- Estado 2: Error al obtener ubicación --------
+            if st.session_state.geo_error:
+                st.error(
+                    f"⚠️ **No pudimos obtener tu ubicación.**\n\n"
+                    f"Detalle: {st.session_state.geo_error}\n\n"
+                    f"**¿Cómo habilitar el GPS?**\n"
+                    f"1. Toca el ícono del candado junto a la URL\n"
+                    f"2. Habilita 'Ubicación' o 'Location'\n"
+                    f"3. Recarga la página y presiona 'Reintentar'"
+                )
+                if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_2"):
+                    st.session_state.geo_error = None
+                    st.session_state.geo_data = None
+                    st.session_state.geo_retry += 1
+                    st.rerun()
+                st.stop()
+
+            # -------- Estado 3: Validar distancia --------
+            try:
+                user_lat = float(st.session_state.geo_data.get("latitude"))
+                user_lon = float(st.session_state.geo_data.get("longitude"))
+            except (TypeError, ValueError):
+                st.error("Los datos de ubicación recibidos no son válidos. Intenta nuevamente.")
+                if st.button("Reintentar", use_container_width=True, key="geo_retry_3"):
+                    st.session_state.geo_data = None
+                    st.session_state.geo_retry += 1
+                    st.rerun()
+                st.stop()
+
+            zfc_lat = float(CONFIG.get("zfc_lat", 7.90750))
+            zfc_lon = float(CONFIG.get("zfc_lon", -72.50472))
+            radio_max = float(CONFIG.get("radio_geofence_km", 3.0))
+
+            distancia = calcular_distancia_km(user_lat, user_lon, zfc_lat, zfc_lon)
+
+            if distancia > radio_max:
+                st.error(
+                    f"### ⚠️ Te encuentras lejos de la ubicación\n\n"
+                    f"**Debes estar en la Zona Franca de Cúcuta para poder enturnarte.**\n\n"
+                    f"Distancia actual: **{distancia:.1f} km** de las instalaciones.\n\n"
+                    f"Radio permitido: **{radio_max:.1f} km**.\n\n"
+                    f"Acércate a la Zona Franca de Cúcuta y presiona el botón para verificar de nuevo."
+                )
+                if st.button("Verificar ubicación de nuevo", use_container_width=True, key="geo_recheck"):
+                    st.session_state.geo_data = None
+                    st.session_state.geo_error = None
+                    st.session_state.geo_retry += 1
+                    st.rerun()
+                st.stop()
+
+            # -------- Estado 4: Ubicación válida --------
+            st.success(f"📍 Ubicación verificada. Estás a {distancia:.1f} km de la Zona Franca.")
+
+            st.markdown("Completa tus datos para asignarte un turno.")
+            st.caption("Todos los campos con (*) son obligatorios")
+
+            with st.form("form_conductor", clear_on_submit=False):
+                placa = st.text_input("Placa del Vehículo *", placeholder="Ej: ABC123").upper().strip()
+                nombre = st.text_input("Nombre Completo del Conductor *", placeholder="Ej: Juan Pérez").title().strip()
+                cedula = st.text_input("Número de Cédula *", placeholder="Ej: 1234567890").strip()
+                telefono = st.text_input("Teléfono de Contacto *", placeholder="Ej: 3001234567").strip()
+                bodega = st.selectbox(
+                    "Bodega de Destino *",
+                    ["Seleccione una bodega..."] + CONFIG.get("bodegas", []),
+                )
+                submitted = st.form_submit_button("Obtener Turno", use_container_width=True)
+
+                if submitted:
+                    errores = []
+                    if not placa:
+                        errores.append("La placa del vehículo es obligatoria.")
+                    if not nombre:
+                        errores.append("El nombre del conductor es obligatorio.")
+                    if not cedula:
+                        errores.append("El número de cédula es obligatorio.")
+                    if not telefono:
+                        errores.append("El teléfono de contacto es obligatorio.")
+                    if bodega == "Seleccione una bodega...":
+                        errores.append("Debes seleccionar una bodega de destino.")
+                    if cedula and not cedula.isdigit():
+                        errores.append("La cédula debe contener solo números.")
+                    if telefono and not telefono.isdigit():
+                        errores.append("El teléfono debe contener solo números.")
+                    if telefono and len(telefono) < 7:
+                        errores.append("El teléfono debe tener al menos 7 dígitos.")
+                    if placa and len(placa) < 5:
+                        errores.append("La placa debe tener al menos 5 caracteres.")
+
+                    if errores:
+                        st.error("⚠️ Corrige los siguientes errores:\n\n" + "\n".join(f"• {e}" for e in errores))
+                    else:
+                        actuales = cargar_datos()
+                        activo = next(
+                            (t for t in actuales
+                             if t["placa"] == placa and "FINALIZADO" not in (t.get("estado") or "").upper()),
+                            None,
                         )
-                        if st.button("Volver a verificar GPS", use_container_width=True):
+                        if activo:
+                            st.warning(f"La placa {placa} ya tiene turno activo: {activo['id_turno']}")
+                            st.session_state.mi_turno_id = activo["id_turno"]
                             try:
-                                st.query_params.clear()
-                                st.query_params["modo"] = "conductor"
+                                st.query_params["t"] = activo["id_turno"]
                             except Exception:
                                 pass
                             st.rerun()
-                    else:
-                        st.success(f"📍 Ubicación verificada correctamente (Estás a {distancia:.1f} km de la Zona Franca).")
-                        st.markdown("Completa tus datos para asignarte un turno.")
-                        st.caption("Todos los campos con (*) son obligatorios")
-
-                        with st.form("form_conductor", clear_on_submit=False):
-                            placa = st.text_input("Placa del Vehículo *", placeholder="Ej: ABC123").upper().strip()
-                            nombre = st.text_input("Nombre Completo del Conductor *", placeholder="Ej: Juan Pérez").title().strip()
-                            cedula = st.text_input("Número de Cédula *", placeholder="Ej: 1234567890").strip()
-                            telefono = st.text_input("Teléfono de Contacto *", placeholder="Ej: 3001234567").strip()
-                            bodega = st.selectbox(
-                                "Bodega de Destino *",
-                                ["Seleccione una bodega..."] + CONFIG.get("bodegas", []),
-                            )
-                            submitted = st.form_submit_button("Obtener Turno", use_container_width=True)
-
-                            if submitted:
-                                errores = []
-                                if not placa:
-                                    errores.append("La placa del vehículo es obligatoria.")
-                                if not nombre:
-                                    errores.append("El nombre del conductor es obligatorio.")
-                                if not cedula:
-                                    errores.append("El número de cédula es obligatorio.")
-                                if not telefono:
-                                    errores.append("El teléfono de contacto es obligatorio.")
-                                if bodega == "Seleccione una bodega...":
-                                    errores.append("Debes seleccionar una bodega de destino.")
-                                if cedula and not cedula.isdigit():
-                                    errores.append("La cédula debe contener solo números.")
-                                if telefono and not telefono.isdigit():
-                                    errores.append("El teléfono debe contener solo números.")
-                                if telefono and len(telefono) < 7:
-                                    errores.append("El teléfono debe tener al menos 7 dígitos.")
-                                if placa and len(placa) < 5:
-                                    errores.append("La placa debe tener al menos 5 caracteres.")
-
-                                if errores:
-                                    st.error("⚠️ Corrige los siguientes errores:\n\n" + "\n".join(f"• {e}" for e in errores))
-                                else:
-                                    actuales = cargar_datos()
-                                    activo = next(
-                                        (t for t in actuales
-                                         if t["placa"] == placa and "FINALIZADO" not in (t.get("estado") or "").upper()),
-                                        None,
-                                    )
-                                    if activo:
-                                        st.warning(f"La placa {placa} ya tiene turno activo: {activo['id_turno']}")
-                                        st.session_state.mi_turno_id = activo["id_turno"]
-                                        try:
-                                            st.query_params["t"] = activo["id_turno"]
-                                        except Exception:
-                                            pass
-                                        st.rerun()
-                                    else:
-                                        nuevo_id = len(actuales) + 1
-                                        turno_str = f"T-{nuevo_id:03d}"
-                                        nuevo = {
-                                            "id_turno": turno_str,
-                                            "placa": placa,
-                                            "nombre": nombre,
-                                            "cedula": cedula,
-                                            "telefono": telefono,
-                                            "bodega": bodega,
-                                            "tipo_movimiento": "Ingresar",
-                                            "estado": "En Espera",
-                                            "fecha_hora": ahora_str(),
-                                            "mensaje_admin": "En espera de autorización",
-                                            "mostrar_en_pantalla": False,
-                                            "fecha_autorizacion": None,
-                                            "fecha_ingreso_zf": None,
-                                            "fecha_salida_zf": None,
-                                            "checklist_ingreso": {},
-                                            "checklist_salida": {},
-                                            "observaciones_vigilante": "",
-                                        }
-                                        actuales.append(nuevo)
-                                        guardar_datos(actuales)
-                                        st.session_state.mi_turno_id = turno_str
-                                        try:
-                                            st.query_params["t"] = turno_str
-                                        except Exception:
-                                            pass
-                                        st.rerun()
-                except Exception as e:
-                    st.error("Error al validar la geolocalización. Intenta recargar la página.")
+                        else:
+                            nuevo_id = len(actuales) + 1
+                            turno_str = f"T-{nuevo_id:03d}"
+                            nuevo = {
+                                "id_turno": turno_str,
+                                "placa": placa,
+                                "nombre": nombre,
+                                "cedula": cedula,
+                                "telefono": telefono,
+                                "bodega": bodega,
+                                "tipo_movimiento": "Ingresar",
+                                "estado": "En Espera",
+                                "fecha_hora": ahora_str(),
+                                "mensaje_admin": "En espera de autorización",
+                                "mostrar_en_pantalla": False,
+                                "fecha_autorizacion": None,
+                                "fecha_ingreso_zf": None,
+                                "fecha_salida_zf": None,
+                                "checklist_ingreso": {},
+                                "checklist_salida": {},
+                                "observaciones_vigilante": "",
+                            }
+                            actuales.append(nuevo)
+                            guardar_datos(actuales)
+                            st.session_state.mi_turno_id = turno_str
+                            try:
+                                st.query_params["t"] = turno_str
+                            except Exception:
+                                pass
+                            st.rerun()
 
         st.markdown("---")
         with st.expander("Visualizar estado de mi placa"):
@@ -1337,13 +1379,28 @@ if modo_qp == "operador":
             )
 
             st.markdown("---")
-            st.markdown("**Seguridad y Geolocalización (Geofencing)**")
+            st.markdown("**Rango de geolocalización**")
             radio_val = st.number_input(
                 "Radio máximo permitido en kilómetros desde la Zona Franca",
-                min_value=1.0, max_value=100.0,
-                value=float(CONFIG.get("radio_geofence_km", 15.0)),
-                step=1.0,
+                min_value=0.5, max_value=200.0,
+                value=float(CONFIG.get("radio_geofence_km", 3.0)),
+                step=0.5,
             )
+
+            c_geo1, c_geo2 = st.columns(2)
+            with c_geo1:
+                zfc_lat_in = st.number_input(
+                    "Latitud Zona Franca",
+                    value=float(CONFIG.get("zfc_lat", 7.90750)),
+                    format="%.5f",
+                )
+            with c_geo2:
+                zfc_lon_in = st.number_input(
+                    "Longitud Zona Franca",
+                    value=float(CONFIG.get("zfc_lon", -72.50472)),
+                    format="%.5f",
+                )
+            st.caption("Coordenadas de la Zona Franca de Cúcuta. Verifica en Google Maps si es necesario.")
 
             st.markdown("---")
             st.markdown("**URL base de la aplicación**")
@@ -1374,6 +1431,8 @@ if modo_qp == "operador":
                 cfg = {
                     "tiempo_en_pantalla_min": int(tiempo),
                     "radio_geofence_km": float(radio_val),
+                    "zfc_lat": float(zfc_lat_in),
+                    "zfc_lon": float(zfc_lon_in),
                     "usuario_admin": u_admin,
                     "contrasena_admin": p_admin,
                     "usuario_vigilante": u_vig,
