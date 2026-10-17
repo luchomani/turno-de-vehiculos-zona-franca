@@ -282,7 +282,6 @@ st.markdown("""
         color: var(--zfc-danger);
         margin: 4px 0;
     }
-    /* 🔧 FIX: Ficho más grande en Pantalla TV */
     .card-ficho {
         font-size: 20px;
         font-weight: 800;
@@ -354,23 +353,40 @@ st.markdown("""
 DATA_FILE = "turnos_zfc.json"
 CONFIG_FILE = "config_zfc.json"
 
+# 🔧 FIX: Se actualizan los valores por defecto. Si el servidor borra los archivos por inactividad, 
+# la app arrancará con estas nuevas contraseñas y bodegas.
 DEFAULT_CONFIG = {
+    "config_version": 2, # <-- Control de versiones para actualización automática
     "tiempo_en_pantalla_min": 30,
     "usuario_admin": "Zona Franca Santander",
-    "contrasena_admin": "ZONAFRANCA123",
-    "usuario_vigilante": "Vigilante",
-    "contrasena_vigilante": "VIGILANTE2026",
+    "contrasena_admin": "ZONAFRANCA123-",
+    "usuario_vigilante": "VIGILANTE123-",
+    "contrasena_vigilante": "VIGILANTE123-",
     "url_base": "",
     "radio_geofence_km": 3.0,
     "zfc_lat": 7.90750,
     "zfc_lon": -72.50472,
     "bodegas": [
-        "Bodega Principal / Generica",
-        "Alfranca Cucuta S.A.S.",
-        "Inversiones Cargamax HYJ S.A.S.",
-        "Logistica Aduanera J.H. Ltda.",
-        "Setracomex S.A.S.",
-        "Otra Bodega / Operador",
+        "OTRA BODEGA",
+        "ALFRANCA CUCUTA S.A.S.",
+        "ALMACODER SAS",
+        "ALMANORTE S.A.S",
+        "BERZATEX S.A.S.",
+        "COSMOGREEN SAS",
+        "DEL BEN SAS",
+        "GLEX S.A.S.",
+        "GRUPO EMPRESARIAL SUAPEL S.A.S.",
+        "HSQ GROUP INTERNATIONAL SAS",
+        "INDULOGISTICS SAS",
+        "INTERNATIONAL FRONTIER S.A.S.",
+        "INVERSIONES CARGAMAX HYJ S.A.S.",
+        "LOGISTICA ADUANERA J.H. LTDA",
+        "LOGISTICA COEX SAS",
+        "M.B. INDUSTRIAS Y SERVICIOS SAS",
+        "MANUFEX GROUP S.A.S.",
+        "SETRACOMEX S.A.S.",
+        "TRENDS LOVERS S.A.S.",
+        "VEHIMAQ ZONA FRANCA SAS"
     ],
 }
 
@@ -416,6 +432,16 @@ def cargar_config():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
+                
+                # 🔧 FIX: Actualización automática de contraseñas y bodegas sin perder turnos
+                if cfg.get("config_version", 1) < DEFAULT_CONFIG["config_version"]:
+                    cfg["config_version"] = DEFAULT_CONFIG["config_version"]
+                    cfg["contrasena_admin"] = DEFAULT_CONFIG["contrasena_admin"]
+                    cfg["usuario_vigilante"] = DEFAULT_CONFIG["usuario_vigilante"]
+                    cfg["contrasena_vigilante"] = DEFAULT_CONFIG["contrasena_vigilante"]
+                    cfg["bodegas"] = DEFAULT_CONFIG["bodegas"]
+                    guardar_config(cfg)
+                    
                 return {**DEFAULT_CONFIG, **cfg}
         except Exception:
             pass
@@ -493,7 +519,7 @@ def generar_qr_png(url: str):
     except Exception:
         return None
 
-# 🔧 FIX: Función para generar Excel con formato profesional
+# Función para generar Excel con formato profesional
 def generar_excel(df, filename="reporte.xlsx"):
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -541,7 +567,6 @@ def render_header_institucional():
                 st.image(fn, use_container_width=True)
                 break
     with c2:
-        # 🔧 FIX: Título actualizado
         st.markdown("""
         <div style="text-align:center;">
             <div class="inst-title">Sistema de Enturnamiento y Control de Accesos</div>
@@ -631,7 +656,6 @@ if modo_qp == "pantalla":
                 st.markdown('<div class="empty-state">No hay vehículos autorizados para ingresar.</div>', unsafe_allow_html=True)
             else:
                 for t in ingresos:
-                    # 🔧 FIX: Se quitó "Destino" (bodega)
                     st.markdown(f"""
                     <div class="card-ingreso">
                         <div class="card-ficho">Ficho {t['id_turno']}</div>
@@ -646,7 +670,6 @@ if modo_qp == "pantalla":
                 st.markdown('<div class="empty-state">No hay vehículos autorizados para salir.</div>', unsafe_allow_html=True)
             else:
                 for t in salidas:
-                    # 🔧 FIX: Se quitó "Destino" (bodega)
                     st.markdown(f"""
                     <div class="card-salida">
                         <div class="card-ficho">Ficho {t['id_turno']}</div>
@@ -868,13 +891,11 @@ if modo_qp == "conductor":
                 cedula = st.text_input("Número de Cédula *", placeholder="Ej: 1234567890").strip()
                 telefono = st.text_input("Teléfono de Contacto *", placeholder="Ej: 3001234567").strip()
                 
-                # 🔧 FIX: Bodega ahora es opcional (sin validación forzada)
                 bodega = st.selectbox(
                     "Bodega de Destino (Opcional)",
                     ["Seleccione una bodega..."] + CONFIG.get("bodegas", []),
                 )
                 
-                # 🔧 FIX: Campo de observaciones añadido
                 observaciones_conductor = st.text_area(
                     "Observaciones (Opcional)", 
                     placeholder="Si tienes alguna nota sobre tu vehículo o carga, escríbela aquí..."
@@ -1012,7 +1033,6 @@ if modo_qp == "vigilante":
 
     st.markdown("---")
 
-    # 🔧 FIX: Tabs para separar el control operativo del historial
     tab_control, tab_historial_vig = st.tabs(["Control de Acceso", "Historial"])
 
     with tab_control:
@@ -1155,7 +1175,6 @@ if modo_qp == "vigilante":
 
             st.dataframe(df_v, use_container_width=True, hide_index=True, height=450)
 
-            # 🔧 FIX: Excel organizado
             excel_data = generar_excel(df_v)
             st.download_button(
                 "Descargar Excel",
@@ -1252,7 +1271,6 @@ if modo_qp == "operador":
                             f"Tel: {turno_sel.get('telefono','—')}"
                         )
                         
-                        # 🔧 FIX: Editable Placa
                         nueva_placa = st.text_input("Placa del Vehículo", value=turno_sel.get('placa', '')).upper().strip()
                         
                         st.markdown(f"**Bodega:** {turno_sel.get('bodega','—')}")
@@ -1558,11 +1576,12 @@ if modo_qp == "operador":
             bodegas_txt = st.text_area(
                 "Lista de bodegas",
                 value="\n".join(CONFIG.get("bodegas", [])),
-                height=150,
+                height=250,
             )
 
             if st.form_submit_button("Guardar Configuración", use_container_width=True):
                 cfg = {
+                    "config_version": DEFAULT_CONFIG["config_version"],
                     "tiempo_en_pantalla_min": int(tiempo),
                     "radio_geofence_km": float(radio_val),
                     "zfc_lat": float(zfc_lat_in),
@@ -1681,7 +1700,6 @@ if modo_qp == "operador":
 
             st.dataframe(df_v, use_container_width=True, hide_index=True, height=450)
 
-            # 🔧 FIX: Excel organizado para Operador también
             excel_data = generar_excel(df_v)
             st.download_button(
                 "Descargar Excel",
