@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
 import streamlit as st
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 try:
     import qrcode
@@ -280,9 +282,10 @@ st.markdown("""
         color: var(--zfc-danger);
         margin: 4px 0;
     }
+    /* 🔧 FIX: Ficho más grande en Pantalla TV */
     .card-ficho {
-        font-size: 12px;
-        font-weight: 700;
+        font-size: 20px;
+        font-weight: 800;
         color: var(--zfc-text-soft);
         letter-spacing: 2px;
         text-transform: uppercase;
@@ -386,6 +389,7 @@ def _migrar_campos(item):
         "checklist_ingreso": {},
         "checklist_salida": {},
         "observaciones_vigilante": "",
+        "observaciones_conductor": "",
         "telefono": "",
     }
     for k, v in defaults.items():
@@ -422,7 +426,7 @@ def guardar_config(cfg):
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 # ==========================================================================
-# HELPERS Y GEOFENCING
+# HELPERS Y EXPORTACIÓN A EXCEL
 # ==========================================================================
 def calcular_distancia_km(lat1, lon1, lat2, lon2):
     R = 6371.0
@@ -489,6 +493,46 @@ def generar_qr_png(url: str):
     except Exception:
         return None
 
+# 🔧 FIX: Función para generar Excel con formato profesional
+def generar_excel(df, filename="reporte.xlsx"):
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Reporte')
+        ws = writer.sheets['Reporte']
+        
+        # Estilos
+        header_fill = PatternFill(start_color="1B4D3E", end_color="1B4D3E", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True)
+        thin_border = Border(
+            left=Side(style="thin", color="D9D9D9"),
+            right=Side(style="thin", color="D9D9D9"),
+            top=Side(style="thin", color="D9D9D9"),
+            bottom=Side(style="thin", color="D9D9D9")
+        )
+        
+        # Aplicar estilos a encabezados y celdas
+        for col_idx in range(1, len(df.columns) + 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = thin_border
+            
+            # Ajustar ancho de columnas
+            max_length = len(str(df.columns[col_idx - 1]))
+            for val in df.iloc[:, col_idx - 1]:
+                max_length = max(max_length, len(str(val)))
+            ws.column_dimensions[get_column_letter(col_idx)].width = min(max_length + 3, 40)
+
+        for row_idx in range(2, len(df) + 2):
+            for col_idx in range(1, len(df.columns) + 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.border = thin_border
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+                
+        ws.freeze_panes = "A2"
+    return buffer.getvalue()
+
 def render_header_institucional():
     c1, c2, c3 = st.columns([1.5, 3, 1.5])
     with c1:
@@ -497,9 +541,13 @@ def render_header_institucional():
                 st.image(fn, use_container_width=True)
                 break
     with c2:
+        # 🔧 FIX: Título actualizado
         st.markdown("""
         <div style="text-align:center;">
             <div class="inst-title">Sistema de Enturnamiento y Control de Accesos</div>
+            <div class="inst-sub" style="font-size: 14px; font-weight: 600; color: #1B4D3E; margin-top: 4px;">
+                Ingresos y salidas de Resto del mundo
+            </div>
             <div class="inst-sub">ZONA FRANCA DE CÚCUTA · OPERADA POR ZONA FRANCA SANTANDER</div>
         </div>
         """, unsafe_allow_html=True)
@@ -583,11 +631,11 @@ if modo_qp == "pantalla":
                 st.markdown('<div class="empty-state">No hay vehículos autorizados para ingresar.</div>', unsafe_allow_html=True)
             else:
                 for t in ingresos:
+                    # 🔧 FIX: Se quitó "Destino" (bodega)
                     st.markdown(f"""
                     <div class="card-ingreso">
                         <div class="card-ficho">Ficho {t['id_turno']}</div>
                         <div class="card-placa">{t['placa']}</div>
-                        <div class="card-detalle"><b>Destino:</b> {t['bodega']}</div>
                         <div class="card-aviso">{t.get('mensaje_admin','') or 'Sin mensaje'}</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -598,11 +646,11 @@ if modo_qp == "pantalla":
                 st.markdown('<div class="empty-state">No hay vehículos autorizados para salir.</div>', unsafe_allow_html=True)
             else:
                 for t in salidas:
+                    # 🔧 FIX: Se quitó "Destino" (bodega)
                     st.markdown(f"""
                     <div class="card-salida">
                         <div class="card-ficho">Ficho {t['id_turno']}</div>
                         <div class="card-placa-sal">{t['placa']}</div>
-                        <div class="card-detalle"><b>Destino:</b> {t['bodega']}</div>
                         <div class="card-aviso">{t.get('mensaje_admin','') or 'Sin mensaje'}</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -682,6 +730,9 @@ if modo_qp == "conductor":
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+
+                if actual.get("observaciones_conductor"):
+                    st.info(f"**Tus observaciones:** {actual['observaciones_conductor']}")
 
                 if actual.get("fecha_ingreso_zf"):
                     st.markdown(
@@ -809,17 +860,26 @@ if modo_qp == "conductor":
             st.success(f"📍 Ubicación verificada. Estás a {distancia:.1f} km de la Zona Franca.")
 
             st.markdown("Completa tus datos para asignarte un turno.")
-            st.caption("Todos los campos con (*) son obligatorios")
+            st.caption("Los campos con (*) son obligatorios. La bodega es opcional.")
 
             with st.form("form_conductor", clear_on_submit=False):
                 placa = st.text_input("Placa del Vehículo *", placeholder="Ej: ABC123").upper().strip()
                 nombre = st.text_input("Nombre Completo del Conductor *", placeholder="Ej: Juan Pérez").title().strip()
                 cedula = st.text_input("Número de Cédula *", placeholder="Ej: 1234567890").strip()
                 telefono = st.text_input("Teléfono de Contacto *", placeholder="Ej: 3001234567").strip()
+                
+                # 🔧 FIX: Bodega ahora es opcional (sin validación forzada)
                 bodega = st.selectbox(
-                    "Bodega de Destino *",
+                    "Bodega de Destino (Opcional)",
                     ["Seleccione una bodega..."] + CONFIG.get("bodegas", []),
                 )
+                
+                # 🔧 FIX: Campo de observaciones añadido
+                observaciones_conductor = st.text_area(
+                    "Observaciones (Opcional)", 
+                    placeholder="Si tienes alguna nota sobre tu vehículo o carga, escríbela aquí..."
+                )
+                
                 submitted = st.form_submit_button("Obtener Turno", use_container_width=True)
 
                 if submitted:
@@ -832,8 +892,7 @@ if modo_qp == "conductor":
                         errores.append("El número de cédula es obligatorio.")
                     if not telefono:
                         errores.append("El teléfono de contacto es obligatorio.")
-                    if bodega == "Seleccione una bodega...":
-                        errores.append("Debes seleccionar una bodega de destino.")
+                    
                     if cedula and not cedula.isdigit():
                         errores.append("La cédula debe contener solo números.")
                     if telefono and not telefono.isdigit():
@@ -869,7 +928,7 @@ if modo_qp == "conductor":
                                 "nombre": nombre,
                                 "cedula": cedula,
                                 "telefono": telefono,
-                                "bodega": bodega,
+                                "bodega": bodega if bodega != "Seleccione una bodega..." else "",
                                 "tipo_movimiento": "Ingresar",
                                 "estado": "En Espera",
                                 "fecha_hora": ahora_str(),
@@ -881,6 +940,7 @@ if modo_qp == "conductor":
                                 "checklist_ingreso": {},
                                 "checklist_salida": {},
                                 "observaciones_vigilante": "",
+                                "observaciones_conductor": observaciones_conductor,
                             }
                             actuales.append(nuevo)
                             guardar_datos(actuales)
@@ -952,91 +1012,159 @@ if modo_qp == "vigilante":
 
     st.markdown("---")
 
-    @st.fragment(run_every=5)
-    def panel_vigilante():
-        turnos = cargar_datos()
+    # 🔧 FIX: Tabs para separar el control operativo del historial
+    tab_control, tab_historial_vig = st.tabs(["Control de Acceso", "Historial"])
 
-        pendientes_ing = [
-            t for t in turnos
-            if "INGRESAR" in (t.get("estado") or "").upper()
-            and "ZONA" not in (t.get("estado") or "").upper()
-            and "FINALIZADO" not in (t.get("estado") or "").upper()
-            and not t.get("fecha_ingreso_zf")
-        ]
-        pendientes_sal = [
-            t for t in turnos
-            if "SALIR" in (t.get("estado") or "").upper()
-            and "FINALIZADO" not in (t.get("estado") or "").upper()
-            and not t.get("fecha_salida_zf")
-        ]
+    with tab_control:
+        @st.fragment(run_every=5)
+        def panel_vigilante():
+            turnos = cargar_datos()
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Pendientes de Ingreso", len(pendientes_ing))
-        m2.metric("Pendientes de Salida", len(pendientes_sal))
-        m3.metric("Total en Sistema", len(turnos))
+            pendientes_ing = [
+                t for t in turnos
+                if "INGRESAR" in (t.get("estado") or "").upper()
+                and "ZONA" not in (t.get("estado") or "").upper()
+                and "FINALIZADO" not in (t.get("estado") or "").upper()
+                and not t.get("fecha_ingreso_zf")
+            ]
+            pendientes_sal = [
+                t for t in turnos
+                if "SALIR" in (t.get("estado") or "").upper()
+                and "FINALIZADO" not in (t.get("estado") or "").upper()
+                and not t.get("fecha_salida_zf")
+            ]
 
-        st.markdown("---")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Pendientes de Ingreso", len(pendientes_ing))
+            m2.metric("Pendientes de Salida", len(pendientes_sal))
+            m3.metric("Total en Sistema", len(turnos))
 
-        col_i, col_s = st.columns(2)
+            st.markdown("---")
 
-        with col_i:
-            st.markdown('<div class="col-header-ing">CHECK IN · INGRESOS</div>', unsafe_allow_html=True)
-            if not pendientes_ing:
-                st.markdown('<div class="empty-state">Sin vehículos pendientes de ingreso.</div>', unsafe_allow_html=True)
-            else:
-                for t in pendientes_ing:
-                    with st.expander(f"{t['placa']} · {t['id_turno']}", expanded=False):
-                        st.markdown(f"**Conductor:** {t.get('nombre','')} — C.C. {t.get('cedula','')}")
-                        st.markdown(f"**Teléfono:** {t.get('telefono','—')}")
-                        st.markdown(f"**Bodega:** {t.get('bodega','')}")
-                        st.caption(f"Registrado: {fecha_legible(t.get('fecha_hora',''))}")
-                        if t.get("mensaje_admin"):
-                            st.markdown(f"**Mensaje:** {t['mensaje_admin']}")
+            col_i, col_s = st.columns(2)
 
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        if st.button("Ingreso Autorizado", key=f"btn_in_{t['id_turno']}", use_container_width=True):
-                            hora_conf = ahora_str()
-                            todos = cargar_datos()
-                            for x in todos:
-                                if x["id_turno"] == t["id_turno"]:
-                                    x["fecha_ingreso_zf"] = hora_conf
-                                    x["estado"] = "EN ZONA FRANCA"
-                                    x["mostrar_en_pantalla"] = False
-                                    break
-                            guardar_datos(todos)
-                            st.success(f"Ingreso autorizado para {t['placa']} a las {hora_conf}")
-                            st.rerun()
+            with col_i:
+                st.markdown('<div class="col-header-ing">CHECK IN · INGRESOS</div>', unsafe_allow_html=True)
+                if not pendientes_ing:
+                    st.markdown('<div class="empty-state">Sin vehículos pendientes de ingreso.</div>', unsafe_allow_html=True)
+                else:
+                    for t in pendientes_ing:
+                        with st.expander(f"{t['placa']} · {t['id_turno']}", expanded=False):
+                            st.markdown(f"**Conductor:** {t.get('nombre','')} — C.C. {t.get('cedula','')}")
+                            st.markdown(f"**Teléfono:** {t.get('telefono','—')}")
+                            if t.get("bodega"): st.markdown(f"**Bodega:** {t['bodega']}")
+                            st.caption(f"Registrado: {fecha_legible(t.get('fecha_hora',''))}")
+                            if t.get("observaciones_conductor"):
+                                st.info(f"**Observación del Conductor:** {t['observaciones_conductor']}")
+                            if t.get("mensaje_admin"):
+                                st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
 
-        with col_s:
-            st.markdown('<div class="col-header-sal">CHECK OUT · SALIDAS</div>', unsafe_allow_html=True)
-            if not pendientes_sal:
-                st.markdown('<div class="empty-state">Sin vehículos pendientes de salida.</div>', unsafe_allow_html=True)
-            else:
-                for t in pendientes_sal:
-                    with st.expander(f"{t['placa']} · {t['id_turno']}", expanded=False):
-                        st.markdown(f"**Conductor:** {t.get('nombre','')} — C.C. {t.get('cedula','')}")
-                        st.markdown(f"**Teléfono:** {t.get('telefono','—')}")
-                        st.markdown(f"**Bodega:** {t.get('bodega','')}")
-                        if t.get("fecha_ingreso_zf"):
-                            st.caption(f"Ingresó: {fecha_legible(t['fecha_ingreso_zf'])}")
-                        if t.get("mensaje_admin"):
-                            st.markdown(f"**Mensaje:** {t['mensaje_admin']}")
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            if st.button("Ingreso Autorizado", key=f"btn_in_{t['id_turno']}", use_container_width=True):
+                                hora_conf = ahora_str()
+                                todos = cargar_datos()
+                                for x in todos:
+                                    if x["id_turno"] == t["id_turno"]:
+                                        x["fecha_ingreso_zf"] = hora_conf
+                                        x["estado"] = "EN ZONA FRANCA"
+                                        x["mostrar_en_pantalla"] = False
+                                        break
+                                guardar_datos(todos)
+                                st.success(f"Ingreso autorizado para {t['placa']} a las {hora_conf}")
+                                st.rerun()
 
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        if st.button("Salida Autorizada", key=f"btn_out_{t['id_turno']}", use_container_width=True):
-                            hora_conf = ahora_str()
-                            todos = cargar_datos()
-                            for x in todos:
-                                if x["id_turno"] == t["id_turno"]:
-                                    x["fecha_salida_zf"] = hora_conf
-                                    x["estado"] = "FINALIZADO"
-                                    x["mostrar_en_pantalla"] = False
-                                    break
-                            guardar_datos(todos)
-                            st.success(f"Salida autorizada para {t['placa']} a las {hora_conf}")
-                            st.rerun()
+            with col_s:
+                st.markdown('<div class="col-header-sal">CHECK OUT · SALIDAS</div>', unsafe_allow_html=True)
+                if not pendientes_sal:
+                    st.markdown('<div class="empty-state">Sin vehículos pendientes de salida.</div>', unsafe_allow_html=True)
+                else:
+                    for t in pendientes_sal:
+                        with st.expander(f"{t['placa']} · {t['id_turno']}", expanded=False):
+                            st.markdown(f"**Conductor:** {t.get('nombre','')} — C.C. {t.get('cedula','')}")
+                            st.markdown(f"**Teléfono:** {t.get('telefono','—')}")
+                            if t.get("bodega"): st.markdown(f"**Bodega:** {t['bodega']}")
+                            if t.get("fecha_ingreso_zf"):
+                                st.caption(f"Ingresó: {fecha_legible(t['fecha_ingreso_zf'])}")
+                            if t.get("observaciones_conductor"):
+                                st.info(f"**Observación del Conductor:** {t['observaciones_conductor']}")
+                            if t.get("mensaje_admin"):
+                                st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
 
-    panel_vigilante()
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            if st.button("Salida Autorizada", key=f"btn_out_{t['id_turno']}", use_container_width=True):
+                                hora_conf = ahora_str()
+                                todos = cargar_datos()
+                                for x in todos:
+                                    if x["id_turno"] == t["id_turno"]:
+                                        x["fecha_salida_zf"] = hora_conf
+                                        x["estado"] = "FINALIZADO"
+                                        x["mostrar_en_pantalla"] = False
+                                        break
+                                guardar_datos(todos)
+                                st.success(f"Salida autorizada para {t['placa']} a las {hora_conf}")
+                                st.rerun()
+
+        panel_vigilante()
+
+    with tab_historial_vig:
+        st.markdown("#### Historial General de Turnos")
+        turnos_h = cargar_datos()
+        if not turnos_h:
+            st.info("No hay turnos registrados.")
+        else:
+            df = pd.DataFrame(turnos_h)
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total", len(df))
+            m2.metric("En Espera", len(df[df["estado"].astype(str).str.contains("Espera", case=False, na=False)]))
+            m3.metric("Autorizados", len(df[df["estado"].astype(str).str.contains("AUTORIZADO", case=False, na=False)]))
+            m4.metric("Finalizados", len(df[df["estado"].astype(str).str.contains("FINALIZADO", case=False, na=False)]))
+
+            st.markdown("---")
+
+            df["fecha_hora"] = df["fecha_hora"].apply(fecha_legible)
+            df["fecha_autorizacion"] = df["fecha_autorizacion"].apply(fecha_legible)
+            df["fecha_ingreso_zf"] = df["fecha_ingreso_zf"].apply(fecha_legible)
+            df["fecha_salida_zf"] = df["fecha_salida_zf"].apply(fecha_legible)
+
+            cols = [
+                "id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora",
+                "bodega", "tipo_movimiento", "estado", "mensaje_admin",
+                "fecha_autorizacion", "fecha_ingreso_zf", "fecha_salida_zf",
+                "observaciones_conductor", "observaciones_vigilante"
+            ]
+            cols_disp = [c for c in cols if c in df.columns]
+
+            df_v = df[cols_disp].rename(columns={
+                "id_turno": "Turno",
+                "placa": "Placa",
+                "nombre": "Conductor",
+                "cedula": "Cédula",
+                "telefono": "Teléfono",
+                "fecha_hora": "Fecha Registro",
+                "bodega": "Bodega",
+                "tipo_movimiento": "Movimiento",
+                "estado": "Estado",
+                "mensaje_admin": "Mensaje",
+                "fecha_autorizacion": "Autorizado Operador",
+                "fecha_ingreso_zf": "Ingreso Vigilante",
+                "fecha_salida_zf": "Salida Vigilante",
+                "observaciones_conductor": "Obs. Conductor",
+                "observaciones_vigilante": "Obs. Vigilante",
+            })
+
+            st.dataframe(df_v, use_container_width=True, hide_index=True, height=450)
+
+            # 🔧 FIX: Excel organizado
+            excel_data = generar_excel(df_v)
+            st.download_button(
+                "Descargar Excel",
+                data=excel_data,
+                file_name=f"turnos_zfc_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
     st.stop()
 
 # ==========================================================================
@@ -1123,8 +1251,15 @@ if modo_qp == "operador":
                             f"C.C. {turno_sel.get('cedula','')} | "
                             f"Tel: {turno_sel.get('telefono','—')}"
                         )
-                        st.markdown(f"**Placa:** {turno_sel.get('placa','')} | **Bodega:** {turno_sel.get('bodega','')}")
+                        
+                        # 🔧 FIX: Editable Placa
+                        nueva_placa = st.text_input("Placa del Vehículo", value=turno_sel.get('placa', '')).upper().strip()
+                        
+                        st.markdown(f"**Bodega:** {turno_sel.get('bodega','—')}")
                         st.markdown(f"**Registrado:** {fecha_legible(turno_sel.get('fecha_hora',''))}")
+                        
+                        if turno_sel.get("observaciones_conductor"):
+                            st.info(f"**Obs. Conductor:** {turno_sel['observaciones_conductor']}")
 
                         nuevo_tipo = st.selectbox(
                             "Tipo de movimiento",
@@ -1164,6 +1299,7 @@ if modo_qp == "operador":
                                 for t in turnos_g:
                                     if t["id_turno"] == id_sel:
                                         antes = (t.get("estado") or "").upper()
+                                        t["placa"] = nueva_placa
                                         t["tipo_movimiento"] = nuevo_tipo
                                         t["estado"] = nuevo_estado
                                         t["mensaje_admin"] = mensaje
@@ -1244,7 +1380,6 @@ if modo_qp == "operador":
                     <div class="card-ingreso">
                         <div class="card-ficho">Ficho {t['id_turno']}</div>
                         <div class="card-placa">{t['placa']}</div>
-                        <div class="card-detalle"><b>Destino:</b> {t['bodega']}</div>
                         <div class="card-aviso">{t.get('mensaje_admin','') or '—'}</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1258,7 +1393,6 @@ if modo_qp == "operador":
                     <div class="card-salida">
                         <div class="card-ficho">Ficho {t['id_turno']}</div>
                         <div class="card-placa-sal">{t['placa']}</div>
-                        <div class="card-detalle"><b>Destino:</b> {t['bodega']}</div>
                         <div class="card-aviso">{t.get('mensaje_admin','') or '—'}</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1476,17 +1610,23 @@ if modo_qp == "operador":
         st.markdown("---")
         st.markdown("#### Exportar antes de limpiar")
         st.caption(
-            "Recomendación: descarga el historial en CSV antes de limpiar, "
+            "Recomendación: descarga el historial en Excel antes de limpiar, "
             "para conservar evidencia de la jornada."
         )
         if total_registros > 0:
             df_clean = pd.DataFrame(turnos_actuales)
-            csv_clean = df_clean.to_csv(index=False).encode("utf-8-sig")
+            
+            df_clean["fecha_hora"] = df_clean["fecha_hora"].apply(fecha_legible)
+            df_clean["fecha_autorizacion"] = df_clean["fecha_autorizacion"].apply(fecha_legible)
+            df_clean["fecha_ingreso_zf"] = df_clean["fecha_ingreso_zf"].apply(fecha_legible)
+            df_clean["fecha_salida_zf"] = df_clean["fecha_salida_zf"].apply(fecha_legible)
+            
+            csv_clean = generar_excel(df_clean)
             st.download_button(
-                "Descargar respaldo del historial completo",
+                "Descargar respaldo del historial completo (Excel)",
                 data=csv_clean,
-                file_name=f"respaldo_turnos_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv",
+                file_name=f"respaldo_turnos_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 key="dl_respaldo",
             )
@@ -1517,7 +1657,7 @@ if modo_qp == "operador":
                 "id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora",
                 "bodega", "tipo_movimiento", "estado", "mensaje_admin",
                 "fecha_autorizacion", "fecha_ingreso_zf", "fecha_salida_zf",
-                "observaciones_vigilante",
+                "observaciones_conductor", "observaciones_vigilante"
             ]
             cols_disp = [c for c in cols if c in df.columns]
 
@@ -1535,17 +1675,19 @@ if modo_qp == "operador":
                 "fecha_autorizacion": "Autorizado Operador",
                 "fecha_ingreso_zf": "Ingreso Vigilante",
                 "fecha_salida_zf": "Salida Vigilante",
-                "observaciones_vigilante": "Observaciones",
+                "observaciones_conductor": "Obs. Conductor",
+                "observaciones_vigilante": "Obs. Vigilante",
             })
 
             st.dataframe(df_v, use_container_width=True, hide_index=True, height=450)
 
-            csv = df_v.to_csv(index=False).encode("utf-8-sig")
+            # 🔧 FIX: Excel organizado para Operador también
+            excel_data = generar_excel(df_v)
             st.download_button(
-                "Descargar CSV",
-                data=csv,
-                file_name=f"turnos_zfc_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv",
+                "Descargar Excel",
+                data=excel_data,
+                file_name=f"turnos_zfc_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
 
