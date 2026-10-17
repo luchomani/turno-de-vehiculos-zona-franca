@@ -358,7 +358,7 @@ CONFIG_FILE = "config_zfc.json"
 DEFAULT_CONFIG = {
     "config_version": 2, # <-- Control de versiones para actualización automática
     "tiempo_en_pantalla_min": 30,
-    "usuario_admin": "Zona Franca Santander",
+    "usuario_admin": "ZONAFRANCA123-",
     "contrasena_admin": "ZONAFRANCA123-",
     "usuario_vigilante": "VIGILANTE123-",
     "contrasena_vigilante": "VIGILANTE123-",
