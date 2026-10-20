@@ -619,7 +619,7 @@ try:
         if turno_encontrado:
             st.session_state.mi_turno_id = turno_encontrado.get("uid")
             
-    # 🔧 FIX: 2. Si no está en la URL, intentar recuperar desde la memoria local del celular (localStorage)
+    # 2. Si no está en la URL, intentar recuperar desde la memoria local del celular (localStorage)
     if st.session_state.mi_turno_id is None and HAS_GEO and modo_qp == "conductor":
         uid_local = get_local_storage("mi_turno_uid")
         if uid_local:
@@ -1022,7 +1022,6 @@ if modo_qp == "conductor":
                             
                             st.session_state.mi_turno_id = nuevo["uid"]
                             
-                            # 🔧 FIX: Guardamos en la memoria del celular para que no se pierda al reiniciar
                             if HAS_GEO:
                                 try:
                                     set_local_storage("mi_turno_uid", nuevo["uid"])
