@@ -9,6 +9,8 @@ Acceso vía query param: ?modo=conductor|vigilante|operador|pantalla
 import os
 import json
 import math
+import time
+import copy
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
@@ -502,7 +504,6 @@ def badge_html(estado_raw):
 def buscar_turno(turnos, id_turno):
     return next((t for t in turnos if t.get("id_turno") == id_turno), None)
 
-# 🔧 FIX: QR más grande, alto contraste (negro) y borde estándar para mayor compatibilidad en Android
 def generar_qr_png(url: str):
     if not HAS_QR or not url:
         return None
@@ -522,7 +523,6 @@ def generar_qr_png(url: str):
     except Exception:
         return None
 
-# Función para generar Excel con formato profesional
 def generar_excel(df, filename="reporte.xlsx"):
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -583,8 +583,11 @@ def render_header_institucional():
                 break
 
 # ==========================================================================
-# SESSION STATE
+# SESSION STATE Y PERSISTENCIA DE SESIÓN (2 HORAS)
 # ==========================================================================
+if "historial_turnos" not in st.session_state:
+    st.session_state.historial_turnos = []
+
 if "auth_operador" not in st.session_state:
     st.session_state.auth_operador = False
 if "auth_vigilante" not in st.session_state:
@@ -597,6 +600,23 @@ try:
     modo_qp = (qp.get("modo") or "").strip().lower()
     if st.session_state.mi_turno_id is None and "t" in qp:
         st.session_state.mi_turno_id = qp.get("t")
+        
+    ahora_ts = time.time()
+    
+    if not st.session_state.auth_operador and "op_ts" in qp:
+        try:
+            if ahora_ts - float(qp["op_ts"]) < 7200:
+                st.session_state.auth_operador = True
+        except ValueError:
+            pass
+            
+    if not st.session_state.auth_vigilante and "vig_ts" in qp:
+        try:
+            if ahora_ts - float(qp["vig_ts"]) < 7200:
+                st.session_state.auth_vigilante = True
+        except ValueError:
+            pass
+
 except Exception:
     qp = {}
     modo_qp = ""
@@ -791,10 +811,7 @@ if modo_qp == "conductor":
 
         else:
             if not HAS_GEO:
-                st.error(
-                    "Falta la librería **streamlit-js-eval**. "
-                    "Agrégala a `requirements.txt` y redeploya la aplicación."
-                )
+                st.error("Falta la librería **streamlit-js-eval**. Agrégala a `requirements.txt` y redeploya la aplicación.")
                 st.stop()
 
             if "geo_data" not in st.session_state:
@@ -806,9 +823,7 @@ if modo_qp == "conductor":
 
             if st.session_state.geo_data is None and st.session_state.geo_error is None:
                 st.info("📍 Verificando tu ubicación GPS... Por favor permite el acceso cuando el navegador lo solicite.")
-
                 loc = get_geolocation(component_key=f"geo_{st.session_state.geo_retry}")
-
                 if loc is not None:
                     try:
                         if isinstance(loc, dict) and "coords" in loc:
@@ -874,7 +889,6 @@ if modo_qp == "conductor":
                 st.stop()
 
             st.success(f"📍 Ubicación verificada. Estás a {distancia:.1f} km de la Zona Franca.")
-
             st.markdown("Completa tus datos para asignarte un turno.")
             st.caption("Los campos con (*) son obligatorios. La bodega es opcional.")
 
@@ -898,35 +912,32 @@ if modo_qp == "conductor":
 
                 if submitted:
                     errores = []
-                    if not placa:
-                        errores.append("La placa del vehículo es obligatoria.")
-                    if not nombre:
-                        errores.append("El nombre del conductor es obligatorio.")
-                    if not cedula:
-                        errores.append("El número de cédula es obligatorio.")
-                    if not telefono:
-                        errores.append("El teléfono de contacto es obligatorio.")
+                    if not placa: errores.append("La placa del vehículo es obligatoria.")
+                    if not nombre: errores.append("El nombre del conductor es obligatorio.")
+                    if not cedula: errores.append("El número de cédula es obligatorio.")
+                    if not telefono: errores.append("El teléfono de contacto es obligatorio.")
                     
-                    if cedula and not cedula.isdigit():
-                        errores.append("La cédula debe contener solo números.")
-                    if telefono and not telefono.isdigit():
-                        errores.append("El teléfono debe contener solo números.")
-                    if telefono and len(telefono) < 7:
-                        errores.append("El teléfono debe tener al menos 7 dígitos.")
-                    if placa and len(placa) < 5:
-                        errores.append("La placa debe tener al menos 5 caracteres.")
+                    if cedula and not cedula.isdigit(): errores.append("La cédula debe contener solo números.")
+                    if telefono and not telefono.isdigit(): errores.append("El teléfono debe contener solo números.")
+                    if telefono and len(telefono) < 7: errores.append("El teléfono debe tener al menos 7 dígitos.")
+                    if placa and len(placa) < 5: errores.append("La placa debe tener al menos 5 caracteres.")
 
                     if errores:
                         st.error("⚠️ Corrige los siguientes errores:\n\n" + "\n".join(f"• {e}" for e in errores))
                     else:
                         actuales = cargar_datos()
+                        # Limpieza profunda de la placa (sin espacios, mayúsculas)
+                        placa_clean = placa.replace(" ", "").upper()
+                        
+                        # 🔧 FIX: Bloqueo estricto de duplicados
                         activo = next(
                             (t for t in actuales
-                             if t["placa"] == placa and "FINALIZADO" not in (t.get("estado") or "").upper()),
+                             if t.get("placa", "").replace(" ", "").upper() == placa_clean 
+                             and "FINALIZADO" not in (t.get("estado") or "").upper()),
                             None,
                         )
                         if activo:
-                            st.warning(f"La placa {placa} ya tiene turno activo: {activo['id_turno']}")
+                            st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']}")
                             st.session_state.mi_turno_id = activo["id_turno"]
                             try:
                                 st.query_params["t"] = activo["id_turno"]
@@ -934,11 +945,16 @@ if modo_qp == "conductor":
                                 pass
                             st.rerun()
                         else:
-                            nuevo_id = len(actuales) + 1
-                            turno_str = f"T-{nuevo_id:03d}"
+                            st.session_state.historial_turnos.append(copy.deepcopy(actuales))
+                            
+                            # 🔧 FIX: Generación de ID sin colisiones (evita duplicar fichos si se borran turnos)
+                            ids_existentes = [int(t["id_turno"].split("-")[1]) for t in actuales if t.get("id_turno", "").startswith("T-") and t["id_turno"].split("-")[1].isdigit()]
+                            nuevo_num = max(ids_existentes) + 1 if ids_existentes else 1
+                            turno_str = f"T-{nuevo_num:03d}"
+
                             nuevo = {
                                 "id_turno": turno_str,
-                                "placa": placa,
+                                "placa": placa_clean,
                                 "nombre": nombre,
                                 "cedula": cedula,
                                 "telefono": telefono,
@@ -973,9 +989,11 @@ if modo_qp == "conductor":
                     st.error("Ingresa una placa.")
                 else:
                     tb = cargar_datos()
+                    p_buscar_clean = p_buscar.replace(" ", "").upper()
                     encontrado = next(
                         (t for t in reversed(tb)
-                         if t["placa"] == p_buscar and "FINALIZADO" not in (t.get("estado") or "").upper()),
+                         if t.get("placa", "").replace(" ", "").upper() == p_buscar_clean 
+                         and "FINALIZADO" not in (t.get("estado") or "").upper()),
                         None,
                     )
                     if encontrado:
@@ -1006,6 +1024,10 @@ if modo_qp == "vigilante":
                 if st.form_submit_button("Iniciar Sesión", use_container_width=True):
                     if u == CONFIG.get("usuario_vigilante") and p == CONFIG.get("contrasena_vigilante"):
                         st.session_state.auth_vigilante = True
+                        try:
+                            st.query_params["vig_ts"] = str(time.time())
+                        except Exception:
+                            pass
                         st.rerun()
                     else:
                         st.error("Credenciales incorrectas.")
@@ -1019,7 +1041,8 @@ if modo_qp == "vigilante":
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_vig"):
             st.session_state.auth_vigilante = False
             try:
-                st.query_params.clear()
+                if "vig_ts" in st.query_params:
+                    del st.query_params["vig_ts"]
             except Exception:
                 pass
             st.rerun()
@@ -1074,6 +1097,7 @@ if modo_qp == "vigilante":
 
                             st.markdown("<br>", unsafe_allow_html=True)
                             if st.button("Ingreso Autorizado", key=f"btn_in_{t['id_turno']}", use_container_width=True):
+                                st.session_state.historial_turnos.append(copy.deepcopy(turnos))
                                 hora_conf = ahora_str()
                                 todos = cargar_datos()
                                 for x in todos:
@@ -1105,6 +1129,7 @@ if modo_qp == "vigilante":
 
                             st.markdown("<br>", unsafe_allow_html=True)
                             if st.button("Salida Autorizada", key=f"btn_out_{t['id_turno']}", use_container_width=True):
+                                st.session_state.historial_turnos.append(copy.deepcopy(turnos))
                                 hora_conf = ahora_str()
                                 todos = cargar_datos()
                                 for x in todos:
@@ -1195,6 +1220,10 @@ if modo_qp == "operador":
                 if st.form_submit_button("Iniciar Sesión", use_container_width=True):
                     if u == CONFIG.get("usuario_admin") and p == CONFIG.get("contrasena_admin"):
                         st.session_state.auth_operador = True
+                        try:
+                            st.query_params["op_ts"] = str(time.time())
+                        except Exception:
+                            pass
                         st.rerun()
                     else:
                         st.error("Credenciales incorrectas.")
@@ -1208,7 +1237,8 @@ if modo_qp == "operador":
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_op"):
             st.session_state.auth_operador = False
             try:
-                st.query_params.clear()
+                if "op_ts" in st.query_params:
+                    del st.query_params["op_ts"]
             except Exception:
                 pass
             st.rerun()
@@ -1229,6 +1259,13 @@ if modo_qp == "operador":
         if not turnos_g:
             st.info("No hay turnos registrados.")
         else:
+            if st.session_state.historial_turnos:
+                if st.button("Deshacer Última Acción", type="primary", key="btn_undo"):
+                    ultimo_estado = st.session_state.historial_turnos.pop()
+                    guardar_datos(ultimo_estado)
+                    st.success("Se ha deshecho la última acción correctamente.")
+                    st.rerun()
+            
             filtro = st.selectbox(
                 "Filtrar por estado:",
                 ["Todos", "En Espera", "Autorizados", "En Zona Franca", "Finalizados"],
@@ -1236,16 +1273,11 @@ if modo_qp == "operador":
             )
 
             def filtrar(lst):
-                if filtro == "Todos":
-                    return lst
-                if filtro == "En Espera":
-                    return [t for t in lst if "ESPERA" in (t.get("estado") or "").upper()]
-                if filtro == "Autorizados":
-                    return [t for t in lst if "AUTORIZADO" in (t.get("estado") or "").upper()]
-                if filtro == "En Zona Franca":
-                    return [t for t in lst if "ZONA FRANCA" in (t.get("estado") or "").upper()]
-                if filtro == "Finalizados":
-                    return [t for t in lst if "FINALIZADO" in (t.get("estado") or "").upper()]
+                if filtro == "Todos": return lst
+                if filtro == "En Espera": return [t for t in lst if "ESPERA" in (t.get("estado") or "").upper()]
+                if filtro == "Autorizados": return [t for t in lst if "AUTORIZADO" in (t.get("estado") or "").upper()]
+                if filtro == "En Zona Franca": return [t for t in lst if "ZONA FRANCA" in (t.get("estado") or "").upper()]
+                if filtro == "Finalizados": return [t for t in lst if "FINALIZADO" in (t.get("estado") or "").upper()]
                 return lst
 
             lista = filtrar(turnos_g)
@@ -1299,28 +1331,48 @@ if modo_qp == "operador":
                         )
 
                         eliminar = st.checkbox("Eliminar este turno permanentemente")
+                        
+                        pass_confirm = ""
+                        if eliminar:
+                            pass_confirm = st.text_input("Ingrese contraseña de Operador para confirmar eliminación", type="password")
 
                         if st.form_submit_button("Guardar Cambios", use_container_width=True):
                             if eliminar:
-                                turnos_g = [t for t in turnos_g if t["id_turno"] != id_sel]
-                                guardar_datos(turnos_g)
-                                st.success(f"Turno {id_sel} eliminado.")
-                                st.rerun()
+                                if pass_confirm != CONFIG.get("contrasena_admin"):
+                                    st.error("❌ Contraseña incorrecta. No se puede eliminar el turno.")
+                                else:
+                                    st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
+                                    turnos_g = [t for t in turnos_g if t["id_turno"] != id_sel]
+                                    guardar_datos(turnos_g)
+                                    st.success(f"Turno {id_sel} eliminado.")
+                                    st.rerun()
                             else:
-                                for t in turnos_g:
-                                    if t["id_turno"] == id_sel:
-                                        antes = (t.get("estado") or "").upper()
-                                        t["placa"] = nueva_placa
-                                        t["tipo_movimiento"] = nuevo_tipo
-                                        t["estado"] = nuevo_estado
-                                        t["mensaje_admin"] = mensaje
-                                        t["mostrar_en_pantalla"] = mostrar
-                                        if "AUTORIZADO" in nuevo_estado.upper() and "AUTORIZADO" not in antes:
-                                            t["fecha_autorizacion"] = ahora_str()
-                                        break
-                                guardar_datos(turnos_g)
-                                st.success("Cambios guardados.")
-                                st.rerun()
+                                # 🔧 FIX: Prevenir placas duplicadas en edición
+                                nueva_placa_clean = nueva_placa.replace(" ", "").upper()
+                                placa_duplicada = any(
+                                    t.get("placa", "").replace(" ", "").upper() == nueva_placa_clean 
+                                    and t["id_turno"] != id_sel 
+                                    and "FINALIZADO" not in (t.get("estado") or "").upper()
+                                    for t in turnos_g
+                                )
+                                if placa_duplicada:
+                                    st.error(f"❌ La placa {nueva_placa} ya está registrada en otro turno activo.")
+                                else:
+                                    st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
+                                    for t in turnos_g:
+                                        if t["id_turno"] == id_sel:
+                                            antes = (t.get("estado") or "").upper()
+                                            t["placa"] = nueva_placa_clean
+                                            t["tipo_movimiento"] = nuevo_tipo
+                                            t["estado"] = nuevo_estado
+                                            t["mensaje_admin"] = mensaje
+                                            t["mostrar_en_pantalla"] = mostrar
+                                            if "AUTORIZADO" in nuevo_estado.upper() and "AUTORIZADO" not in antes:
+                                                t["fecha_autorizacion"] = ahora_str()
+                                            break
+                                    guardar_datos(turnos_g)
+                                    st.success("Cambios guardados.")
+                                    st.rerun()
 
                 st.markdown("---")
                 st.markdown("##### Alternar visibilidad en pantalla (rápido)")
@@ -1347,6 +1399,7 @@ if modo_qp == "operador":
                 )
 
                 if st.button("Aplicar cambios de visibilidad", key="btn_vis"):
+                    st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
                     for _, row in edited.iterrows():
                         for t in turnos_g:
                             if t["id_turno"] == row["Turno"]:
@@ -1497,15 +1550,10 @@ if modo_qp == "operador":
                     """, unsafe_allow_html=True)
 
                     if qr_bytes:
-                        # Mostrar QR
                         st.image(qr_bytes, use_container_width=True)
-                        
-                        # 🔧 FIX: Texto de respaldo para escaneo manual
                         st.markdown("<div style='text-align:center; margin-top:-10px; margin-bottom:10px;'><b>O ingresa a este enlace:</b></div>", unsafe_allow_html=True)
                         st.code(url_portal, language=None)
-                        
                         st.caption(portal["descripcion"])
-                        
                         st.download_button(
                             f"Descargar QR · {portal['titulo'].title()}",
                             data=qr_bytes,
@@ -1621,6 +1669,7 @@ if modo_qp == "operador":
             use_container_width=True,
             key="clean_todos_hoy",
         ):
+            st.session_state.historial_turnos.append(copy.deepcopy(turnos_actuales))
             guardar_datos([])
             st.success("Se eliminaron todos los turnos. Sistema limpio para iniciar nueva jornada.")
             st.rerun()
