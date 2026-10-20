@@ -1,5 +1,5 @@
 streamlit
 pandas
 qrcode[pil]
-streamlit-geolocation
+streamlit_js_eval
 openpyxl
