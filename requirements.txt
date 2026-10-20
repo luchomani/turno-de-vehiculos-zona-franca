@@ -1,5 +1,5 @@
 streamlit
 pandas
 qrcode[pil]
-streamlit_js_eval
+streamlit-js-eval
 openpyxl
