@@ -926,10 +926,8 @@ if modo_qp == "conductor":
                         st.error("⚠️ Corrige los siguientes errores:\n\n" + "\n".join(f"• {e}" for e in errores))
                     else:
                         actuales = cargar_datos()
-                        # Limpieza profunda de la placa (sin espacios, mayúsculas)
                         placa_clean = placa.replace(" ", "").upper()
                         
-                        # 🔧 FIX: Bloqueo estricto de duplicados
                         activo = next(
                             (t for t in actuales
                              if t.get("placa", "").replace(" ", "").upper() == placa_clean 
@@ -947,7 +945,6 @@ if modo_qp == "conductor":
                         else:
                             st.session_state.historial_turnos.append(copy.deepcopy(actuales))
                             
-                            # 🔧 FIX: Generación de ID sin colisiones (evita duplicar fichos si se borran turnos)
                             ids_existentes = [int(t["id_turno"].split("-")[1]) for t in actuales if t.get("id_turno", "").startswith("T-") and t["id_turno"].split("-")[1].isdigit()]
                             nuevo_num = max(ids_existentes) + 1 if ids_existentes else 1
                             turno_str = f"T-{nuevo_num:03d}"
@@ -1290,20 +1287,25 @@ if modo_qp == "operador":
 
                 if turno_sel:
                     with st.form(f"form_g_{id_sel}"):
-                        st.markdown(
-                            f"**Conductor:** {turno_sel.get('nombre','')} | "
-                            f"C.C. {turno_sel.get('cedula','')} | "
-                            f"Tel: {turno_sel.get('telefono','—')}"
-                        )
+                        st.markdown("##### Editar Datos del Conductor")
                         
                         nueva_placa = st.text_input("Placa del Vehículo", value=turno_sel.get('placa', '')).upper().strip()
+                        nuevo_nombre = st.text_input("Nombre del Conductor", value=turno_sel.get('nombre', '')).title().strip()
+                        nueva_cedula = st.text_input("Cédula", value=turno_sel.get('cedula', '')).strip()
+                        nuevo_telefono = st.text_input("Teléfono", value=turno_sel.get('telefono', '')).strip()
                         
-                        st.markdown(f"**Bodega:** {turno_sel.get('bodega','—')}")
-                        st.markdown(f"**Registrado:** {fecha_legible(turno_sel.get('fecha_hora',''))}")
+                        lista_bodegas = ["Seleccione una bodega..."] + CONFIG.get("bodegas", [])
+                        bodega_actual = turno_sel.get("bodega", "")
+                        idx_bodega = lista_bodegas.index(bodega_actual) if bodega_actual in lista_bodegas else 0
+                        nueva_bodega = st.selectbox("Bodega de Destino", lista_bodegas, index=idx_bodega)
                         
-                        if turno_sel.get("observaciones_conductor"):
-                            st.info(f"**Obs. Conductor:** {turno_sel['observaciones_conductor']}")
+                        nuevas_obs_conductor = st.text_area("Observaciones del Conductor", value=turno_sel.get('observaciones_conductor', ''))
+                        
+                        st.caption(f"**Registrado originalmente:** {fecha_legible(turno_sel.get('fecha_hora',''))}")
 
+                        st.markdown("---")
+                        st.markdown("##### Estado y Gestión")
+                        
                         nuevo_tipo = st.selectbox(
                             "Tipo de movimiento",
                             ["Ingresar", "Salir"],
@@ -1330,6 +1332,7 @@ if modo_qp == "operador":
                             value=bool(turno_sel.get("mostrar_en_pantalla", False)),
                         )
 
+                        st.markdown("---")
                         eliminar = st.checkbox("Eliminar este turno permanentemente")
                         
                         pass_confirm = ""
@@ -1347,7 +1350,6 @@ if modo_qp == "operador":
                                     st.success(f"Turno {id_sel} eliminado.")
                                     st.rerun()
                             else:
-                                # 🔧 FIX: Prevenir placas duplicadas en edición
                                 nueva_placa_clean = nueva_placa.replace(" ", "").upper()
                                 placa_duplicada = any(
                                     t.get("placa", "").replace(" ", "").upper() == nueva_placa_clean 
@@ -1362,16 +1364,25 @@ if modo_qp == "operador":
                                     for t in turnos_g:
                                         if t["id_turno"] == id_sel:
                                             antes = (t.get("estado") or "").upper()
+                                            
+                                            # Actualizar todos los campos
                                             t["placa"] = nueva_placa_clean
+                                            t["nombre"] = nuevo_nombre
+                                            t["cedula"] = nueva_cedula
+                                            t["telefono"] = nuevo_telefono
+                                            t["bodega"] = nueva_bodega if nueva_bodega != "Seleccione una bodega..." else ""
+                                            t["observaciones_conductor"] = nuevas_obs_conductor
+                                            
                                             t["tipo_movimiento"] = nuevo_tipo
                                             t["estado"] = nuevo_estado
                                             t["mensaje_admin"] = mensaje
                                             t["mostrar_en_pantalla"] = mostrar
+                                            
                                             if "AUTORIZADO" in nuevo_estado.upper() and "AUTORIZADO" not in antes:
                                                 t["fecha_autorizacion"] = ahora_str()
                                             break
                                     guardar_datos(turnos_g)
-                                    st.success("Cambios guardados.")
+                                    st.success("Cambios guardados exitosamente.")
                                     st.rerun()
 
                 st.markdown("---")
