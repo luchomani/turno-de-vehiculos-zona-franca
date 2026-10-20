@@ -26,7 +26,8 @@ except ImportError:
     HAS_QR = False
 
 try:
-    from streamlit_js_eval import get_geolocation
+    # 🔧 FIX: Importamos las funciones de memoria local para que el tiquet no se pierda al refrescar
+    from streamlit_js_eval import get_geolocation, get_local_storage, set_local_storage, delete_local_storage
     HAS_GEO = True
 except ImportError:
     HAS_GEO = False
@@ -595,7 +596,7 @@ def render_header_institucional():
                 break
 
 # ==========================================================================
-# SESSION STATE Y PERSISTENCIA DE SESIÓN (2 HORAS)
+# SESSION STATE Y PERSISTENCIA DE SESIÓN (2 HORAS Y MEMORIA LOCAL)
 # ==========================================================================
 if "historial_turnos" not in st.session_state:
     st.session_state.historial_turnos = []
@@ -611,11 +612,24 @@ try:
     qp = st.query_params
     modo_qp = (qp.get("modo") or "").strip().lower()
     
+    # 1. Intentar recuperar desde la URL
     if st.session_state.mi_turno_id is None and "t" in qp:
         val_t = qp.get("t")
         turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == val_t or t.get("id_turno") == val_t), None)
         if turno_encontrado:
             st.session_state.mi_turno_id = turno_encontrado.get("uid")
+            
+    # 🔧 FIX: 2. Si no está en la URL, intentar recuperar desde la memoria local del celular (localStorage)
+    if st.session_state.mi_turno_id is None and HAS_GEO and modo_qp == "conductor":
+        uid_local = get_local_storage("mi_turno_uid")
+        if uid_local:
+            turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == uid_local), None)
+            if turno_encontrado:
+                st.session_state.mi_turno_id = turno_encontrado.get("uid")
+                try:
+                    st.query_params["t"] = turno_encontrado.get("uid")
+                except Exception:
+                    pass
         
     ahora_ts = time.time()
     
@@ -813,11 +827,16 @@ if modo_qp == "conductor":
             st.markdown("<br>", unsafe_allow_html=True)
             col_a, col_b = st.columns(2)
             with col_a:
-                if st.button("Actualizar Estado", use_container_width=True):
+                if st.button("Actualizar Estado Manualmente", use_container_width=True):
                     st.rerun()
             with col_b:
                 if st.button("Registrar otro vehículo", use_container_width=True):
                     st.session_state.mi_turno_id = None
+                    if HAS_GEO:
+                        try:
+                            delete_local_storage("mi_turno_uid")
+                        except Exception:
+                            pass
                     try:
                         st.query_params.clear()
                         st.query_params["modo"] = "conductor"
@@ -953,6 +972,13 @@ if modo_qp == "conductor":
                         if activo:
                             st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']} del {fecha_legible(activo['fecha_hora'])}")
                             st.session_state.mi_turno_id = activo["uid"]
+                            
+                            if HAS_GEO:
+                                try:
+                                    set_local_storage("mi_turno_uid", activo["uid"])
+                                except Exception:
+                                    pass
+                                    
                             try:
                                 st.query_params["t"] = activo["uid"]
                             except Exception:
@@ -961,7 +987,6 @@ if modo_qp == "conductor":
                         else:
                             st.session_state.historial_turnos.append(copy.deepcopy(actuales))
                             
-                            # Generación de ID basada en la jornada (corte a las 18:00)
                             ultimo_corte = obtener_ultimo_corte()
                             corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
                             
@@ -994,7 +1019,16 @@ if modo_qp == "conductor":
                             }
                             actuales.append(nuevo)
                             guardar_datos(actuales)
+                            
                             st.session_state.mi_turno_id = nuevo["uid"]
+                            
+                            # 🔧 FIX: Guardamos en la memoria del celular para que no se pierda al reiniciar
+                            if HAS_GEO:
+                                try:
+                                    set_local_storage("mi_turno_uid", nuevo["uid"])
+                                except Exception:
+                                    pass
+                                    
                             try:
                                 st.query_params["t"] = nuevo["uid"]
                             except Exception:
@@ -1018,6 +1052,13 @@ if modo_qp == "conductor":
                     )
                     if encontrado:
                         st.session_state.mi_turno_id = encontrado["uid"]
+                        
+                        if HAS_GEO:
+                            try:
+                                set_local_storage("mi_turno_uid", encontrado["uid"])
+                            except Exception:
+                                pass
+                                
                         try:
                             st.query_params["t"] = encontrado["uid"]
                         except Exception:
