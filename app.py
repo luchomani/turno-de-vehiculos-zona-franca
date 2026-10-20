@@ -353,10 +353,8 @@ st.markdown("""
 DATA_FILE = "turnos_zfc.json"
 CONFIG_FILE = "config_zfc.json"
 
-# 🔧 FIX: Se actualizan los valores por defecto. Si el servidor borra los archivos por inactividad, 
-# la app arrancará con estas nuevas contraseñas y bodegas.
 DEFAULT_CONFIG = {
-    "config_version": 2, # <-- Control de versiones para actualización automática
+    "config_version": 2, 
     "tiempo_en_pantalla_min": 30,
     "usuario_admin": "ZONAFRANCA123-",
     "contrasena_admin": "ZONAFRANCA123-",
@@ -433,7 +431,6 @@ def cargar_config():
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
                 
-                # 🔧 FIX: Actualización automática de contraseñas y bodegas sin perder turnos
                 if cfg.get("config_version", 1) < DEFAULT_CONFIG["config_version"]:
                     cfg["config_version"] = DEFAULT_CONFIG["config_version"]
                     cfg["contrasena_admin"] = DEFAULT_CONFIG["contrasena_admin"]
@@ -505,14 +502,20 @@ def badge_html(estado_raw):
 def buscar_turno(turnos, id_turno):
     return next((t for t in turnos if t.get("id_turno") == id_turno), None)
 
+# 🔧 FIX: QR más grande, alto contraste (negro) y borde estándar para mayor compatibilidad en Android
 def generar_qr_png(url: str):
     if not HAS_QR or not url:
         return None
     try:
-        qr = qrcode.QRCode(version=None, box_size=10, border=2)
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_H,
+            box_size=15,
+            border=4,
+        )
         qr.add_data(url)
         qr.make(fit=True)
-        img = qr.make_image(fill_color="#12402A", back_color="white")
+        img = qr.make_image(fill_color="#000000", back_color="#FFFFFF")
         buf = BytesIO()
         img.save(buf, format="PNG")
         return buf.getvalue()
@@ -526,7 +529,6 @@ def generar_excel(df, filename="reporte.xlsx"):
         df.to_excel(writer, index=False, sheet_name='Reporte')
         ws = writer.sheets['Reporte']
         
-        # Estilos
         header_fill = PatternFill(start_color="1B4D3E", end_color="1B4D3E", fill_type="solid")
         header_font = Font(color="FFFFFF", bold=True)
         thin_border = Border(
@@ -536,7 +538,6 @@ def generar_excel(df, filename="reporte.xlsx"):
             bottom=Side(style="thin", color="D9D9D9")
         )
         
-        # Aplicar estilos a encabezados y celdas
         for col_idx in range(1, len(df.columns) + 1):
             cell = ws.cell(row=1, column=col_idx)
             cell.fill = header_fill
@@ -544,7 +545,6 @@ def generar_excel(df, filename="reporte.xlsx"):
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = thin_border
             
-            # Ajustar ancho de columnas
             max_length = len(str(df.columns[col_idx - 1]))
             for val in df.iloc[:, col_idx - 1]:
                 max_length = max(max_length, len(str(val)))
@@ -790,9 +790,6 @@ if modo_qp == "conductor":
                     st.rerun()
 
         else:
-            # ==============================================================
-            # Verificación de ubicación GPS
-            # ==============================================================
             if not HAS_GEO:
                 st.error(
                     "Falta la librería **streamlit-js-eval**. "
@@ -807,7 +804,6 @@ if modo_qp == "conductor":
             if "geo_retry" not in st.session_state:
                 st.session_state.geo_retry = 0
 
-            # -------- Estado 1: Esperando ubicación --------
             if st.session_state.geo_data is None and st.session_state.geo_error is None:
                 st.info("📍 Verificando tu ubicación GPS... Por favor permite el acceso cuando el navegador lo solicite.")
 
@@ -829,7 +825,6 @@ if modo_qp == "conductor":
                         st.rerun()
                     st.stop()
 
-            # -------- Estado 2: Error al obtener ubicación --------
             if st.session_state.geo_error:
                 st.error(
                     f"⚠️ **No pudimos obtener tu ubicación.**\n\n"
@@ -846,7 +841,6 @@ if modo_qp == "conductor":
                     st.rerun()
                 st.stop()
 
-            # -------- Estado 3: Validar distancia --------
             try:
                 user_lat = float(st.session_state.geo_data.get("latitude"))
                 user_lon = float(st.session_state.geo_data.get("longitude"))
@@ -879,7 +873,6 @@ if modo_qp == "conductor":
                     st.rerun()
                 st.stop()
 
-            # -------- Estado 4: Ubicación válida --------
             st.success(f"📍 Ubicación verificada. Estás a {distancia:.1f} km de la Zona Franca.")
 
             st.markdown("Completa tus datos para asignarte un turno.")
@@ -1504,9 +1497,15 @@ if modo_qp == "operador":
                     """, unsafe_allow_html=True)
 
                     if qr_bytes:
+                        # Mostrar QR
                         st.image(qr_bytes, use_container_width=True)
+                        
+                        # 🔧 FIX: Texto de respaldo para escaneo manual
+                        st.markdown("<div style='text-align:center; margin-top:-10px; margin-bottom:10px;'><b>O ingresa a este enlace:</b></div>", unsafe_allow_html=True)
                         st.code(url_portal, language=None)
+                        
                         st.caption(portal["descripcion"])
+                        
                         st.download_button(
                             f"Descargar QR · {portal['titulo'].title()}",
                             data=qr_bytes,
