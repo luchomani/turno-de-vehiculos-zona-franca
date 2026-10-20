@@ -1289,6 +1289,9 @@ if modo_qp == "operador":
                     with st.form(f"form_g_{id_sel}"):
                         st.markdown("##### Editar Datos del Conductor")
                         
+                        # 🔧 FIX: Agregado campo para editar el tiquet
+                        nuevo_tiquet = st.text_input("Número de Ficho (Tiquet)", value=turno_sel.get('id_turno', '')).upper().strip()
+                        
                         nueva_placa = st.text_input("Placa del Vehículo", value=turno_sel.get('placa', '')).upper().strip()
                         nuevo_nombre = st.text_input("Nombre del Conductor", value=turno_sel.get('nombre', '')).title().strip()
                         nueva_cedula = st.text_input("Cédula", value=turno_sel.get('cedula', '')).strip()
@@ -1350,6 +1353,7 @@ if modo_qp == "operador":
                                     st.success(f"Turno {id_sel} eliminado.")
                                     st.rerun()
                             else:
+                                # Validación de placa duplicada
                                 nueva_placa_clean = nueva_placa.replace(" ", "").upper()
                                 placa_duplicada = any(
                                     t.get("placa", "").replace(" ", "").upper() == nueva_placa_clean 
@@ -1357,15 +1361,28 @@ if modo_qp == "operador":
                                     and "FINALIZADO" not in (t.get("estado") or "").upper()
                                     for t in turnos_g
                                 )
+                                
+                                # Validación de tiquet duplicado
+                                tiquet_duplicado = any(
+                                    t.get("id_turno") == nuevo_tiquet 
+                                    and t["id_turno"] != id_sel 
+                                    for t in turnos_g
+                                )
+
                                 if placa_duplicada:
                                     st.error(f"❌ La placa {nueva_placa} ya está registrada en otro turno activo.")
+                                elif tiquet_duplicado:
+                                    st.error(f"❌ El Ficho {nuevo_tiquet} ya está en uso por otro turno. Por favor asigne uno diferente.")
+                                elif not nuevo_tiquet:
+                                    st.error("❌ El número de Ficho no puede estar vacío.")
                                 else:
                                     st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
                                     for t in turnos_g:
                                         if t["id_turno"] == id_sel:
                                             antes = (t.get("estado") or "").upper()
                                             
-                                            # Actualizar todos los campos
+                                            # Actualizar todos los campos (Incluyendo el ID del turno)
+                                            t["id_turno"] = nuevo_tiquet
                                             t["placa"] = nueva_placa_clean
                                             t["nombre"] = nuevo_nombre
                                             t["cedula"] = nueva_cedula
