@@ -26,8 +26,8 @@ except ImportError:
     HAS_QR = False
 
 try:
-    # 🔧 FIX: Volvemos a la librería original para que sea 100% automático sin botones
-    from streamlit_js_eval import get_geolocation, get_local_storage, set_local_storage, delete_local_storage
+    # 🔧 FIX: Usamos streamlit-geolocation que es más estable en la nube
+    from streamlit_geolocation import streamlit_geolocation
     HAS_GEO = True
 except ImportError:
     HAS_GEO = False
@@ -397,6 +397,7 @@ def ahora_str():
     return datetime.now(colombia_tz).strftime("%Y-%m-%d %H:%M:%S")
 
 def obtener_ultimo_corte():
+    """Retorna la fecha y hora del último corte (18:00)"""
     colombia_tz = timezone(timedelta(hours=-5))
     ahora = datetime.now(colombia_tz)
     if ahora.hour >= 18:
@@ -595,7 +596,7 @@ def render_header_institucional():
                 break
 
 # ==========================================================================
-# SESSION STATE Y PERSISTENCIA DE SESIÓN (2 HORAS Y MEMORIA LOCAL)
+# SESSION STATE Y PERSISTENCIA DE SESIÓN (2 HORAS)
 # ==========================================================================
 if "historial_turnos" not in st.session_state:
     st.session_state.historial_turnos = []
@@ -611,23 +612,12 @@ try:
     qp = st.query_params
     modo_qp = (qp.get("modo") or "").strip().lower()
     
+    # Recuperar el turno desde la URL
     if st.session_state.mi_turno_id is None and "t" in qp:
         val_t = qp.get("t")
         turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == val_t or t.get("id_turno") == val_t), None)
         if turno_encontrado:
             st.session_state.mi_turno_id = turno_encontrado.get("uid")
-            
-    # 🔧 FIX: Memoria local (LocalStorage) para que el tiquete no se pierda al refrescar
-    if st.session_state.mi_turno_id is None and HAS_GEO and modo_qp == "conductor":
-        uid_local = get_local_storage("mi_turno_uid")
-        if uid_local:
-            turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == uid_local), None)
-            if turno_encontrado:
-                st.session_state.mi_turno_id = turno_encontrado.get("uid")
-                try:
-                    st.query_params["t"] = turno_encontrado.get("uid")
-                except Exception:
-                    pass
         
     ahora_ts = time.time()
     
@@ -830,11 +820,6 @@ if modo_qp == "conductor":
             with col_b:
                 if st.button("Registrar otro vehículo", use_container_width=True):
                     st.session_state.mi_turno_id = None
-                    if HAS_GEO:
-                        try:
-                            delete_local_storage("mi_turno_uid")
-                        except Exception:
-                            pass
                     try:
                         st.query_params.clear()
                         st.query_params["modo"] = "conductor"
@@ -844,7 +829,7 @@ if modo_qp == "conductor":
 
         else:
             if not HAS_GEO:
-                st.error("Falta la librería **streamlit-js-eval**. Agrégala a `requirements.txt` y redeploya la aplicación.")
+                st.error("Falta la librería **streamlit-geolocation**. Agrégala a `requirements.txt` y redeploya la aplicación.")
                 st.stop()
 
             if "geo_data" not in st.session_state:
@@ -854,40 +839,23 @@ if modo_qp == "conductor":
             if "geo_retry" not in st.session_state:
                 st.session_state.geo_retry = 0
 
+            # 🔧 FIX: Nueva lógica de ubicación con streamlit-geolocation
             if st.session_state.geo_data is None and st.session_state.geo_error is None:
                 st.info("📍 Verificando tu ubicación GPS... Por favor permite el acceso cuando el navegador lo solicite.")
-                loc = get_geolocation(component_key=f"geo_{st.session_state.geo_retry}")
-                if loc is not None:
-                    try:
-                        if isinstance(loc, dict) and "coords" in loc:
-                            st.session_state.geo_data = loc["coords"]
-                        else:
-                            st.session_state.geo_error = "No se pudo obtener la ubicación."
-                    except Exception:
-                        st.session_state.geo_error = "Error procesando la ubicación."
+                
+                loc = streamlit_geolocation()
+                
+                if loc and loc.get("latitude") is not None:
+                    st.session_state.geo_data = {
+                        "latitude": loc["latitude"],
+                        "longitude": loc["longitude"]
+                    }
                     st.rerun()
                 else:
-                    st.caption("Si ya otorgaste permisos, espera unos segundos. Si rechazaste, presiona el botón de abajo.")
-                    if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_1"):
-                        st.session_state.geo_retry += 1
+                    st.caption("Haz clic en el botón de abajo si el navegador no muestra la ventana de permisos automáticamente.")
+                    if st.button("📍 Obtener mi ubicación", use_container_width=True, key="geo_btn"):
                         st.rerun()
                     st.stop()
-
-            if st.session_state.geo_error:
-                st.error(
-                    f"⚠️ **No pudimos obtener tu ubicación.**\n\n"
-                    f"Detalle: {st.session_state.geo_error}\n\n"
-                    f"**¿Cómo habilitar el GPS?**\n"
-                    f"1. Toca el ícono del candado junto a la URL\n"
-                    f"2. Habilita 'Ubicación' o 'Location'\n"
-                    f"3. Recarga la página y presiona 'Reintentar'"
-                )
-                if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_2"):
-                    st.session_state.geo_error = None
-                    st.session_state.geo_data = None
-                    st.session_state.geo_retry += 1
-                    st.rerun()
-                st.stop()
 
             try:
                 user_lat = float(st.session_state.geo_data.get("latitude"))
@@ -971,12 +939,6 @@ if modo_qp == "conductor":
                             st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']} del {fecha_legible(activo['fecha_hora'])}")
                             st.session_state.mi_turno_id = activo["uid"]
                             
-                            if HAS_GEO:
-                                try:
-                                    set_local_storage("mi_turno_uid", activo["uid"])
-                                except Exception:
-                                    pass
-                                    
                             try:
                                 st.query_params["t"] = activo["uid"]
                             except Exception:
@@ -1020,12 +982,6 @@ if modo_qp == "conductor":
                             
                             st.session_state.mi_turno_id = nuevo["uid"]
                             
-                            if HAS_GEO:
-                                try:
-                                    set_local_storage("mi_turno_uid", nuevo["uid"])
-                                except Exception:
-                                    pass
-                                    
                             try:
                                 st.query_params["t"] = nuevo["uid"]
                             except Exception:
@@ -1050,12 +1006,6 @@ if modo_qp == "conductor":
                     if encontrado:
                         st.session_state.mi_turno_id = encontrado["uid"]
                         
-                        if HAS_GEO:
-                            try:
-                                set_local_storage("mi_turno_uid", encontrado["uid"])
-                            except Exception:
-                                pass
-                                
                         try:
                             st.query_params["t"] = encontrado["uid"]
                         except Exception:
