@@ -11,6 +11,7 @@ import json
 import math
 import time
 import copy
+import uuid
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
@@ -394,8 +395,19 @@ def ahora_str():
     colombia_tz = timezone(timedelta(hours=-5))
     return datetime.now(colombia_tz).strftime("%Y-%m-%d %H:%M:%S")
 
+def obtener_ultimo_corte():
+    """Retorna la fecha y hora del último corte (18:00)"""
+    colombia_tz = timezone(timedelta(hours=-5))
+    ahora = datetime.now(colombia_tz)
+    if ahora.hour >= 18:
+        return ahora.replace(hour=18, minute=0, second=0, microsecond=0)
+    else:
+        ayer = ahora - timedelta(days=1)
+        return ayer.replace(hour=18, minute=0, second=0, microsecond=0)
+
 def _migrar_campos(item):
     defaults = {
+        "uid": str(uuid.uuid4()),
         "tipo_movimiento": "Ingresar",
         "fecha_hora": ahora_str(),
         "mostrar_en_pantalla": False,
@@ -501,8 +513,8 @@ def badge_html(estado_raw):
         return '<span class="badge badge-finalizado">Finalizado</span>'
     return '<span class="badge badge-espera">En Espera</span>'
 
-def buscar_turno(turnos, id_turno):
-    return next((t for t in turnos if t.get("id_turno") == id_turno), None)
+def buscar_turno(turnos, uid):
+    return next((t for t in turnos if t.get("uid") == uid), None)
 
 def generar_qr_png(url: str):
     if not HAS_QR or not url:
@@ -598,8 +610,12 @@ if "mi_turno_id" not in st.session_state:
 try:
     qp = st.query_params
     modo_qp = (qp.get("modo") or "").strip().lower()
+    
     if st.session_state.mi_turno_id is None and "t" in qp:
-        st.session_state.mi_turno_id = qp.get("t")
+        val_t = qp.get("t")
+        turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == val_t or t.get("id_turno") == val_t), None)
+        if turno_encontrado:
+            st.session_state.mi_turno_id = turno_encontrado.get("uid")
         
     ahora_ts = time.time()
     
@@ -935,21 +951,28 @@ if modo_qp == "conductor":
                             None,
                         )
                         if activo:
-                            st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']}")
-                            st.session_state.mi_turno_id = activo["id_turno"]
+                            st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']} del {fecha_legible(activo['fecha_hora'])}")
+                            st.session_state.mi_turno_id = activo["uid"]
                             try:
-                                st.query_params["t"] = activo["id_turno"]
+                                st.query_params["t"] = activo["uid"]
                             except Exception:
                                 pass
                             st.rerun()
                         else:
                             st.session_state.historial_turnos.append(copy.deepcopy(actuales))
                             
-                            ids_existentes = [int(t["id_turno"].split("-")[1]) for t in actuales if t.get("id_turno", "").startswith("T-") and t["id_turno"].split("-")[1].isdigit()]
+                            # Generación de ID basada en la jornada (corte a las 18:00)
+                            ultimo_corte = obtener_ultimo_corte()
+                            corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
+                            
+                            turnos_jornada = [t for t in actuales if t.get("fecha_hora", "") >= corte_str]
+                            
+                            ids_existentes = [int(t["id_turno"].split("-")[1]) for t in turnos_jornada if t.get("id_turno", "").startswith("T-") and t["id_turno"].split("-")[1].isdigit()]
                             nuevo_num = max(ids_existentes) + 1 if ids_existentes else 1
                             turno_str = f"T-{nuevo_num:03d}"
 
                             nuevo = {
+                                "uid": str(uuid.uuid4()),
                                 "id_turno": turno_str,
                                 "placa": placa_clean,
                                 "nombre": nombre,
@@ -971,9 +994,9 @@ if modo_qp == "conductor":
                             }
                             actuales.append(nuevo)
                             guardar_datos(actuales)
-                            st.session_state.mi_turno_id = turno_str
+                            st.session_state.mi_turno_id = nuevo["uid"]
                             try:
-                                st.query_params["t"] = turno_str
+                                st.query_params["t"] = nuevo["uid"]
                             except Exception:
                                 pass
                             st.rerun()
@@ -994,9 +1017,9 @@ if modo_qp == "conductor":
                         None,
                     )
                     if encontrado:
-                        st.session_state.mi_turno_id = encontrado["id_turno"]
+                        st.session_state.mi_turno_id = encontrado["uid"]
                         try:
-                            st.query_params["t"] = encontrado["id_turno"]
+                            st.query_params["t"] = encontrado["uid"]
                         except Exception:
                             pass
                         st.rerun()
@@ -1093,12 +1116,12 @@ if modo_qp == "vigilante":
                                 st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
 
                             st.markdown("<br>", unsafe_allow_html=True)
-                            if st.button("Ingreso Autorizado", key=f"btn_in_{t['id_turno']}", use_container_width=True):
+                            if st.button("Ingreso Autorizado", key=f"btn_in_{t['uid']}", use_container_width=True):
                                 st.session_state.historial_turnos.append(copy.deepcopy(turnos))
                                 hora_conf = ahora_str()
                                 todos = cargar_datos()
                                 for x in todos:
-                                    if x["id_turno"] == t["id_turno"]:
+                                    if x["uid"] == t["uid"]:
                                         x["fecha_ingreso_zf"] = hora_conf
                                         x["estado"] = "EN ZONA FRANCA"
                                         x["mostrar_en_pantalla"] = False
@@ -1125,12 +1148,12 @@ if modo_qp == "vigilante":
                                 st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
 
                             st.markdown("<br>", unsafe_allow_html=True)
-                            if st.button("Salida Autorizada", key=f"btn_out_{t['id_turno']}", use_container_width=True):
+                            if st.button("Salida Autorizada", key=f"btn_out_{t['uid']}", use_container_width=True):
                                 st.session_state.historial_turnos.append(copy.deepcopy(turnos))
                                 hora_conf = ahora_str()
                                 todos = cargar_datos()
                                 for x in todos:
-                                    if x["id_turno"] == t["id_turno"]:
+                                    if x["uid"] == t["uid"]:
                                         x["fecha_salida_zf"] = hora_conf
                                         x["estado"] = "FINALIZADO"
                                         x["mostrar_en_pantalla"] = False
@@ -1280,16 +1303,19 @@ if modo_qp == "operador":
             lista = filtrar(turnos_g)
 
             if lista:
-                opciones = [f"{t['id_turno']} — {t['placa']} — {t['estado']}" for t in lista]
-                sel = st.selectbox("Selecciona un turno para gestionar:", opciones, key="sel_op")
-                id_sel = sel.split(" — ")[0]
+                opciones_dict = {
+                    f"{t['id_turno']} ({fecha_legible(t.get('fecha_hora',''))}) — {t['placa']} — {t['estado']}": t.get("uid", "")
+                    for t in lista
+                }
+                
+                sel = st.selectbox("Selecciona un turno para gestionar:", list(opciones_dict.keys()), key="sel_op")
+                id_sel = opciones_dict[sel]
                 turno_sel = buscar_turno(turnos_g, id_sel)
 
                 if turno_sel:
                     with st.form(f"form_g_{id_sel}"):
                         st.markdown("##### Editar Datos del Conductor")
                         
-                        # 🔧 FIX: Agregado campo para editar el tiquet
                         nuevo_tiquet = st.text_input("Número de Ficho (Tiquet)", value=turno_sel.get('id_turno', '')).upper().strip()
                         
                         nueva_placa = st.text_input("Placa del Vehículo", value=turno_sel.get('placa', '')).upper().strip()
@@ -1348,40 +1374,40 @@ if modo_qp == "operador":
                                     st.error("❌ Contraseña incorrecta. No se puede eliminar el turno.")
                                 else:
                                     st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
-                                    turnos_g = [t for t in turnos_g if t["id_turno"] != id_sel]
+                                    turnos_g = [t for t in turnos_g if t.get("uid") != id_sel]
                                     guardar_datos(turnos_g)
-                                    st.success(f"Turno {id_sel} eliminado.")
+                                    st.success(f"Turno {turno_sel['id_turno']} eliminado.")
                                     st.rerun()
                             else:
-                                # Validación de placa duplicada
                                 nueva_placa_clean = nueva_placa.replace(" ", "").upper()
                                 placa_duplicada = any(
                                     t.get("placa", "").replace(" ", "").upper() == nueva_placa_clean 
-                                    and t["id_turno"] != id_sel 
+                                    and t.get("uid") != id_sel 
                                     and "FINALIZADO" not in (t.get("estado") or "").upper()
                                     for t in turnos_g
                                 )
                                 
-                                # Validación de tiquet duplicado
+                                ultimo_corte = obtener_ultimo_corte()
+                                corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
                                 tiquet_duplicado = any(
                                     t.get("id_turno") == nuevo_tiquet 
-                                    and t["id_turno"] != id_sel 
+                                    and t.get("fecha_hora", "") >= corte_str
+                                    and t.get("uid") != id_sel 
                                     for t in turnos_g
                                 )
 
                                 if placa_duplicada:
                                     st.error(f"❌ La placa {nueva_placa} ya está registrada en otro turno activo.")
                                 elif tiquet_duplicado:
-                                    st.error(f"❌ El Ficho {nuevo_tiquet} ya está en uso por otro turno. Por favor asigne uno diferente.")
+                                    st.error(f"❌ El Ficho {nuevo_tiquet} ya está en uso en la jornada actual. Por favor asigne uno diferente.")
                                 elif not nuevo_tiquet:
                                     st.error("❌ El número de Ficho no puede estar vacío.")
                                 else:
                                     st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
                                     for t in turnos_g:
-                                        if t["id_turno"] == id_sel:
+                                        if t.get("uid") == id_sel:
                                             antes = (t.get("estado") or "").upper()
                                             
-                                            # Actualizar todos los campos (Incluyendo el ID del turno)
                                             t["id_turno"] = nuevo_tiquet
                                             t["placa"] = nueva_placa_clean
                                             t["nombre"] = nuevo_nombre
@@ -1430,7 +1456,7 @@ if modo_qp == "operador":
                     st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
                     for _, row in edited.iterrows():
                         for t in turnos_g:
-                            if t["id_turno"] == row["Turno"]:
+                            if t["id_turno"] == row["Turno"] and t["placa"] == row["Placa"]:
                                 t["mostrar_en_pantalla"] = bool(row["Visible"])
                                 break
                     guardar_datos(turnos_g)
@@ -1682,24 +1708,22 @@ if modo_qp == "operador":
         total_registros = len(turnos_actuales)
 
         c_met1, c_met2 = st.columns(2)
-        c_met1.metric("Total registros", total_registros)
+        c_met1.metric("Total registros en historial", total_registros)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        st.markdown("##### Limpiar turnos")
+        st.markdown("##### Limpiar turnos manualmente")
         st.caption(
-            "En esta opción todo lo que se haya realizado quedará completamente eliminado, "
-            "es decir, todo quedará limpio para iniciar una nueva jornada laboral y que los "
-            "conductores se puedan enturnar nuevamente."
+            "Esta acción borrará TODOS los turnos del historial. Si deseas conservar la información, descarga el respaldo antes de hacer clic."
         )
         if st.button(
-            "Limpiar",
+            "Limpiar todo el historial",
             use_container_width=True,
             key="clean_todos_hoy",
         ):
             st.session_state.historial_turnos.append(copy.deepcopy(turnos_actuales))
             guardar_datos([])
-            st.success("Se eliminaron todos los turnos. Sistema limpio para iniciar nueva jornada.")
+            st.success("Se eliminaron todos los turnos. Sistema limpio.")
             st.rerun()
 
         st.markdown("---")
