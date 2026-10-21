@@ -4,7 +4,6 @@ Sistema de Gestión de Turnos y Control de Accesos
 Zona Franca Santander — Cúcuta
 =================================================
 Portales: Conductor | Vigilante | Operador | Pantalla Pública
-Acceso vía query param: ?modo=conductor|vigilante|operador|pantalla
 """
 import os
 import json
@@ -26,8 +25,8 @@ except ImportError:
     HAS_QR = False
 
 try:
-    # 🔧 FIX: Usamos streamlit-geolocation que es más estable en la nube
-    from streamlit_geolocation import streamlit_geolocation
+    # 🔧 FIX: Usamos memoria local para que el tiquete no se borre al refrescar
+    from streamlit_js_eval import get_geolocation, get_local_storage, set_local_storage, delete_local_storage
     HAS_GEO = True
 except ImportError:
     HAS_GEO = False
@@ -515,6 +514,7 @@ def badge_html(estado_raw):
     return '<span class="badge badge-espera">En Espera</span>'
 
 def buscar_turno(turnos, uid):
+    # 🔧 FIX: Búsqueda por UID único para evitar confusiones
     return next((t for t in turnos if t.get("uid") == uid), None)
 
 def generar_qr_png(url: str):
@@ -596,7 +596,7 @@ def render_header_institucional():
                 break
 
 # ==========================================================================
-# SESSION STATE Y PERSISTENCIA DE SESIÓN (2 HORAS)
+# SESSION STATE Y PERSISTENCIA DE SESIÓN
 # ==========================================================================
 if "historial_turnos" not in st.session_state:
     st.session_state.historial_turnos = []
@@ -612,12 +612,24 @@ try:
     qp = st.query_params
     modo_qp = (qp.get("modo") or "").strip().lower()
     
-    # Recuperar el turno desde la URL
+    # 1. Intentar recuperar desde la URL
     if st.session_state.mi_turno_id is None and "t" in qp:
         val_t = qp.get("t")
         turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == val_t or t.get("id_turno") == val_t), None)
         if turno_encontrado:
             st.session_state.mi_turno_id = turno_encontrado.get("uid")
+            
+    # 2. Intentar recuperar desde la memoria del celular (LocalStorage)
+    if st.session_state.mi_turno_id is None and HAS_GEO and modo_qp == "conductor":
+        uid_local = get_local_storage("mi_turno_uid")
+        if uid_local:
+            turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == uid_local), None)
+            if turno_encontrado:
+                st.session_state.mi_turno_id = turno_encontrado.get("uid")
+                try:
+                    st.query_params["t"] = turno_encontrado.get("uid")
+                except Exception:
+                    pass
         
     ahora_ts = time.time()
     
@@ -815,11 +827,16 @@ if modo_qp == "conductor":
             st.markdown("<br>", unsafe_allow_html=True)
             col_a, col_b = st.columns(2)
             with col_a:
-                if st.button("Actualizar Estado Manualmente", use_container_width=True):
+                if st.button("Actualizar Estado", use_container_width=True):
                     st.rerun()
             with col_b:
                 if st.button("Registrar otro vehículo", use_container_width=True):
                     st.session_state.mi_turno_id = None
+                    if HAS_GEO:
+                        try:
+                            delete_local_storage("mi_turno_uid")
+                        except Exception:
+                            pass
                     try:
                         st.query_params.clear()
                         st.query_params["modo"] = "conductor"
@@ -829,7 +846,7 @@ if modo_qp == "conductor":
 
         else:
             if not HAS_GEO:
-                st.error("Falta la librería **streamlit-geolocation**. Agrégala a `requirements.txt` y redeploya la aplicación.")
+                st.error("Falta la librería **streamlit-js-eval**. Agrégala a `requirements.txt` y redeploya la aplicación.")
                 st.stop()
 
             if "geo_data" not in st.session_state:
@@ -839,23 +856,40 @@ if modo_qp == "conductor":
             if "geo_retry" not in st.session_state:
                 st.session_state.geo_retry = 0
 
-            # 🔧 FIX: Nueva lógica de ubicación con streamlit-geolocation
             if st.session_state.geo_data is None and st.session_state.geo_error is None:
                 st.info("📍 Verificando tu ubicación GPS... Por favor permite el acceso cuando el navegador lo solicite.")
-                
-                loc = streamlit_geolocation()
-                
-                if loc and loc.get("latitude") is not None:
-                    st.session_state.geo_data = {
-                        "latitude": loc["latitude"],
-                        "longitude": loc["longitude"]
-                    }
+                loc = get_geolocation(component_key=f"geo_{st.session_state.geo_retry}")
+                if loc is not None:
+                    try:
+                        if isinstance(loc, dict) and "coords" in loc:
+                            st.session_state.geo_data = loc["coords"]
+                        else:
+                            st.session_state.geo_error = "No se pudo obtener la ubicación."
+                    except Exception:
+                        st.session_state.geo_error = "Error procesando la ubicación."
                     st.rerun()
                 else:
-                    st.caption("Haz clic en el botón de abajo si el navegador no muestra la ventana de permisos automáticamente.")
-                    if st.button("📍 Obtener mi ubicación", use_container_width=True, key="geo_btn"):
+                    st.caption("Si ya otorgaste permisos, espera unos segundos. Si rechazaste, presiona el botón de abajo.")
+                    if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_1"):
+                        st.session_state.geo_retry += 1
                         st.rerun()
                     st.stop()
+
+            if st.session_state.geo_error:
+                st.error(
+                    f"⚠️ **No pudimos obtener tu ubicación.**\n\n"
+                    f"Detalle: {st.session_state.geo_error}\n\n"
+                    f"**¿Cómo habilitar el GPS?**\n"
+                    f"1. Toca el ícono del candado junto a la URL\n"
+                    f"2. Habilita 'Ubicación' o 'Location'\n"
+                    f"3. Recarga la página y presiona 'Reintentar'"
+                )
+                if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_2"):
+                    st.session_state.geo_error = None
+                    st.session_state.geo_data = None
+                    st.session_state.geo_retry += 1
+                    st.rerun()
+                st.stop()
 
             try:
                 user_lat = float(st.session_state.geo_data.get("latitude"))
@@ -939,6 +973,12 @@ if modo_qp == "conductor":
                             st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']} del {fecha_legible(activo['fecha_hora'])}")
                             st.session_state.mi_turno_id = activo["uid"]
                             
+                            if HAS_GEO:
+                                try:
+                                    set_local_storage("mi_turno_uid", activo["uid"])
+                                except Exception:
+                                    pass
+                                    
                             try:
                                 st.query_params["t"] = activo["uid"]
                             except Exception:
@@ -982,6 +1022,12 @@ if modo_qp == "conductor":
                             
                             st.session_state.mi_turno_id = nuevo["uid"]
                             
+                            if HAS_GEO:
+                                try:
+                                    set_local_storage("mi_turno_uid", nuevo["uid"])
+                                except Exception:
+                                    pass
+                                    
                             try:
                                 st.query_params["t"] = nuevo["uid"]
                             except Exception:
@@ -1006,6 +1052,12 @@ if modo_qp == "conductor":
                     if encontrado:
                         st.session_state.mi_turno_id = encontrado["uid"]
                         
+                        if HAS_GEO:
+                            try:
+                                set_local_storage("mi_turno_uid", encontrado["uid"])
+                            except Exception:
+                                pass
+                                
                         try:
                             st.query_params["t"] = encontrado["uid"]
                         except Exception:
@@ -1104,6 +1156,7 @@ if modo_qp == "vigilante":
                                 st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
 
                             st.markdown("<br>", unsafe_allow_html=True)
+                            # 🔧 FIX: Usar UID para evitar colisiones
                             if st.button("Ingreso Autorizado", key=f"btn_in_{t['uid']}", use_container_width=True):
                                 st.session_state.historial_turnos.append(copy.deepcopy(turnos))
                                 hora_conf = ahora_str()
@@ -1136,6 +1189,7 @@ if modo_qp == "vigilante":
                                 st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
 
                             st.markdown("<br>", unsafe_allow_html=True)
+                            # 🔧 FIX: Usar UID para evitar colisiones
                             if st.button("Salida Autorizada", key=f"btn_out_{t['uid']}", use_container_width=True):
                                 st.session_state.historial_turnos.append(copy.deepcopy(turnos))
                                 hora_conf = ahora_str()
@@ -1291,6 +1345,7 @@ if modo_qp == "operador":
             lista = filtrar(turnos_g)
 
             if lista:
+                # 🔧 FIX: Mostramos la fecha en el selector para distinguir T-001 de diferentes días
                 opciones_dict = {
                     f"{t['id_turno']} ({fecha_legible(t.get('fecha_hora',''))}) — {t['placa']} — {t['estado']}": t.get("uid", "")
                     for t in lista
@@ -1375,6 +1430,7 @@ if modo_qp == "operador":
                                     for t in turnos_g
                                 )
                                 
+                                # 🔧 FIX: Solo buscar duplicados en la jornada actual (después de las 18:00)
                                 ultimo_corte = obtener_ultimo_corte()
                                 corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
                                 tiquet_duplicado = any(
