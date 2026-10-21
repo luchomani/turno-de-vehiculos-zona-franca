@@ -807,7 +807,6 @@ if modo_qp == "conductor":
                     st.rerun()
 
         else:
-            # 🔧 GPS DESACTIVADO TEMPORALMENTE PARA EVITAR ERRORES
             st.info("📍 Ubicación validada. Puedes continuar con tu registro.")
             st.markdown("Completa tus datos para asignarte un turno.")
             st.caption("Los campos con (*) son obligatorios. La bodega es opcional.")
@@ -1232,7 +1231,13 @@ if modo_qp == "operador":
                         idx_bodega = lista_bodegas.index(bodega_actual) if bodega_actual in lista_bodegas else 0
                         nueva_bodega = st.selectbox("Bodega de Destino", lista_bodegas, index=idx_bodega)
                         
-                        nuevas_obs_conductor = st.text_area("Observaciones del Conductor", value=turno_sel.get('observaciones_conductor', ''))
+                        # 🔧 FIX: Bloquear la edición de las observaciones del conductor
+                        st.text_area(
+                            "Observaciones del Conductor (Solo lectura)", 
+                            value=turno_sel.get('observaciones_conductor', ''), 
+                            disabled=True,
+                            help="Este campo solo puede ser modificado por el conductor al momento de registrarse."
+                        )
                         
                         st.caption(f"**Registrado originalmente:** {fecha_legible(turno_sel.get('fecha_hora',''))}")
 
@@ -1318,7 +1323,8 @@ if modo_qp == "operador":
                                             t["cedula"] = nueva_cedula
                                             t["telefono"] = nuevo_telefono
                                             t["bodega"] = nueva_bodega if nueva_bodega != "Seleccione una bodega..." else ""
-                                            t["observaciones_conductor"] = nuevas_obs_conductor
+                                            
+                                            # Ya NO actualizamos observaciones_conductor aquí porque está bloqueado
                                             
                                             t["tipo_movimiento"] = nuevo_tipo
                                             t["estado"] = nuevo_estado
@@ -1335,10 +1341,11 @@ if modo_qp == "operador":
                 st.markdown("---")
                 st.markdown("##### Alternar visibilidad en pantalla (rápido)")
 
+                # 🔧 FIX: Ocultar la columna Placa usando un UID interno
                 df_quick = pd.DataFrame([
                     {
+                        "UID": t.get("uid", ""),
                         "Turno": t["id_turno"],
-                        "Placa": t["placa"],
                         "Estado": t["estado"],
                         "Visible": bool(t.get("mostrar_en_pantalla", False)),
                     }
@@ -1349,8 +1356,9 @@ if modo_qp == "operador":
                     df_quick,
                     use_container_width=True,
                     hide_index=True,
-                    disabled=["Turno", "Placa", "Estado"],
+                    disabled=["UID", "Turno", "Estado"],
                     column_config={
+                        "UID": None, # Oculta esta columna
                         "Visible": st.column_config.CheckboxColumn("En pantalla")
                     },
                     key="de_vis",
@@ -1360,7 +1368,7 @@ if modo_qp == "operador":
                     st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
                     for _, row in edited.iterrows():
                         for t in turnos_g:
-                            if t["id_turno"] == row["Turno"] and t["placa"] == row["Placa"]:
+                            if t.get("uid") == row["UID"]:
                                 t["mostrar_en_pantalla"] = bool(row["Visible"])
                                 break
                     guardar_datos(turnos_g)
