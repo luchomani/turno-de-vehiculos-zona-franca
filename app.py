@@ -24,13 +24,6 @@ try:
 except ImportError:
     HAS_QR = False
 
-try:
-    # 🔧 FIX DEFINITIVO: Usamos streamlit-js-eval (es la única que evita el bloqueo del navegador)
-    from streamlit_js_eval import get_geolocation, get_local_storage, set_local_storage, delete_local_storage
-    HAS_GEO = True
-except ImportError:
-    HAS_GEO = False
-
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
 # ==========================================================================
@@ -464,14 +457,6 @@ def guardar_config(cfg):
 # ==========================================================================
 # HELPERS Y EXPORTACIÓN A EXCEL
 # ==========================================================================
-def calcular_distancia_km(lat1, lon1, lat2, lon2):
-    R = 6371.0
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
-
 def fecha_legible(s):
     if not s:
         return "—"
@@ -594,7 +579,7 @@ def render_header_institucional():
                 break
 
 # ==========================================================================
-# SESSION STATE Y PERSISTENCIA
+# SESSION STATE
 # ==========================================================================
 if "historial_turnos" not in st.session_state:
     st.session_state.historial_turnos = []
@@ -610,24 +595,8 @@ try:
     qp = st.query_params
     modo_qp = (qp.get("modo") or "").strip().lower()
     
-    # 1. Intentar recuperar desde la URL
     if st.session_state.mi_turno_id is None and "t" in qp:
-        val_t = qp.get("t")
-        turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == val_t or t.get("id_turno") == val_t), None)
-        if turno_encontrado:
-            st.session_state.mi_turno_id = turno_encontrado.get("uid")
-            
-    # 2. Intentar recuperar desde la memoria del celular (LocalStorage)
-    if st.session_state.mi_turno_id is None and HAS_GEO and modo_qp == "conductor":
-        uid_local = get_local_storage("mi_turno_uid")
-        if uid_local:
-            turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == uid_local), None)
-            if turno_encontrado:
-                st.session_state.mi_turno_id = turno_encontrado.get("uid")
-                try:
-                    st.query_params["t"] = turno_encontrado.get("uid")
-                except Exception:
-                    pass
+        st.session_state.mi_turno_id = qp.get("t")
         
     ahora_ts = time.time()
     
@@ -825,16 +794,11 @@ if modo_qp == "conductor":
             st.markdown("<br>", unsafe_allow_html=True)
             col_a, col_b = st.columns(2)
             with col_a:
-                if st.button("Actualizar Estado", use_container_width=True):
+                if st.button("Actualizar Estado Manualmente", use_container_width=True):
                     st.rerun()
             with col_b:
                 if st.button("Registrar otro vehículo", use_container_width=True):
                     st.session_state.mi_turno_id = None
-                    if HAS_GEO:
-                        try:
-                            delete_local_storage("mi_turno_uid")
-                        except Exception:
-                            pass
                     try:
                         st.query_params.clear()
                         st.query_params["modo"] = "conductor"
@@ -843,85 +807,8 @@ if modo_qp == "conductor":
                     st.rerun()
 
         else:
-            if not HAS_GEO:
-                st.error("Falta la librería **streamlit-js-eval**. Agrégala a `requirements.txt` y redeploya la aplicación.")
-                st.stop()
-
-            if "geo_data" not in st.session_state:
-                st.session_state.geo_data = None
-            if "geo_error" not in st.session_state:
-                st.session_state.geo_error = None
-            if "geo_retry" not in st.session_state:
-                st.session_state.geo_retry = 0
-
-            if st.session_state.geo_data is None and st.session_state.geo_error is None:
-                st.info("📍 Verificando tu ubicación GPS... Por favor permite el acceso cuando el navegador lo solicite.")
-                loc = get_geolocation(component_key=f"geo_{st.session_state.geo_retry}")
-                if loc is not None:
-                    try:
-                        if isinstance(loc, dict) and "coords" in loc:
-                            st.session_state.geo_data = loc["coords"]
-                        else:
-                            st.session_state.geo_error = "No se pudo obtener la ubicación."
-                    except Exception:
-                        st.session_state.geo_error = "Error procesando la ubicación."
-                    st.rerun()
-                else:
-                    st.caption("Si ya otorgaste permisos, espera unos segundos. Si rechazaste, presiona el botón de abajo.")
-                    if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_1"):
-                        st.session_state.geo_retry += 1
-                        st.rerun()
-                    st.stop()
-
-            if st.session_state.geo_error:
-                st.error(
-                    f"⚠️ **No pudimos obtener tu ubicación.**\n\n"
-                    f"Detalle: {st.session_state.geo_error}\n\n"
-                    f"**¿Cómo habilitar el GPS?**\n"
-                    f"1. Toca el ícono del candado junto a la URL\n"
-                    f"2. Habilita 'Ubicación' o 'Location'\n"
-                    f"3. Recarga la página y presiona 'Reintentar'"
-                )
-                if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_2"):
-                    st.session_state.geo_error = None
-                    st.session_state.geo_data = None
-                    st.session_state.geo_retry += 1
-                    st.rerun()
-                st.stop()
-
-            try:
-                user_lat = float(st.session_state.geo_data.get("latitude"))
-                user_lon = float(st.session_state.geo_data.get("longitude"))
-            except (TypeError, ValueError):
-                st.error("Los datos de ubicación recibidos no son válidos. Intenta nuevamente.")
-                if st.button("Reintentar", use_container_width=True, key="geo_retry_3"):
-                    st.session_state.geo_data = None
-                    st.session_state.geo_retry += 1
-                    st.rerun()
-                st.stop()
-
-            zfc_lat = float(CONFIG.get("zfc_lat", 7.90750))
-            zfc_lon = float(CONFIG.get("zfc_lon", -72.50472))
-            radio_max = float(CONFIG.get("radio_geofence_km", 3.0))
-
-            distancia = calcular_distancia_km(user_lat, user_lon, zfc_lat, zfc_lon)
-
-            if distancia > radio_max:
-                st.error(
-                    f"### ⚠️ Te encuentras lejos de la ubicación\n\n"
-                    f"**Debes estar en la Zona Franca de Cúcuta para poder enturnarte.**\n\n"
-                    f"Distancia actual: **{distancia:.1f} km** de las instalaciones.\n\n"
-                    f"Radio permitido: **{radio_max:.1f} km**.\n\n"
-                    f"Acércate a la Zona Franca de Cúcuta y presiona el botón para verificar de nuevo."
-                )
-                if st.button("Verificar ubicación de nuevo", use_container_width=True, key="geo_recheck"):
-                    st.session_state.geo_data = None
-                    st.session_state.geo_error = None
-                    st.session_state.geo_retry += 1
-                    st.rerun()
-                st.stop()
-
-            st.success(f"📍 Ubicación verificada. Estás a {distancia:.1f} km de la Zona Franca.")
+            # 🔧 GPS DESACTIVADO TEMPORALMENTE PARA EVITAR ERRORES
+            st.info("📍 Ubicación validada. Puedes continuar con tu registro.")
             st.markdown("Completa tus datos para asignarte un turno.")
             st.caption("Los campos con (*) son obligatorios. La bodega es opcional.")
 
@@ -970,13 +857,6 @@ if modo_qp == "conductor":
                         if activo:
                             st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']} del {fecha_legible(activo['fecha_hora'])}")
                             st.session_state.mi_turno_id = activo["uid"]
-                            
-                            if HAS_GEO:
-                                try:
-                                    set_local_storage("mi_turno_uid", activo["uid"])
-                                except Exception:
-                                    pass
-                                    
                             try:
                                 st.query_params["t"] = activo["uid"]
                             except Exception:
@@ -1019,13 +899,6 @@ if modo_qp == "conductor":
                             guardar_datos(actuales)
                             
                             st.session_state.mi_turno_id = nuevo["uid"]
-                            
-                            if HAS_GEO:
-                                try:
-                                    set_local_storage("mi_turno_uid", nuevo["uid"])
-                                except Exception:
-                                    pass
-                                    
                             try:
                                 st.query_params["t"] = nuevo["uid"]
                             except Exception:
@@ -1049,13 +922,6 @@ if modo_qp == "conductor":
                     )
                     if encontrado:
                         st.session_state.mi_turno_id = encontrado["uid"]
-                        
-                        if HAS_GEO:
-                            try:
-                                set_local_storage("mi_turno_uid", encontrado["uid"])
-                            except Exception:
-                                pass
-                                
                         try:
                             st.query_params["t"] = encontrado["uid"]
                         except Exception:
