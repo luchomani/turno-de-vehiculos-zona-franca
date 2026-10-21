@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -23,13 +24,6 @@ try:
     HAS_QR = True
 except ImportError:
     HAS_QR = False
-
-try:
-    # 🔧 FIX: Usamos memoria local para que el tiquete no se borre al refrescar
-    from streamlit_js_eval import get_geolocation, get_local_storage, set_local_storage, delete_local_storage
-    HAS_GEO = True
-except ImportError:
-    HAS_GEO = False
 
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
@@ -396,7 +390,6 @@ def ahora_str():
     return datetime.now(colombia_tz).strftime("%Y-%m-%d %H:%M:%S")
 
 def obtener_ultimo_corte():
-    """Retorna la fecha y hora del último corte (18:00)"""
     colombia_tz = timezone(timedelta(hours=-5))
     ahora = datetime.now(colombia_tz)
     if ahora.hour >= 18:
@@ -514,7 +507,6 @@ def badge_html(estado_raw):
     return '<span class="badge badge-espera">En Espera</span>'
 
 def buscar_turno(turnos, uid):
-    # 🔧 FIX: Búsqueda por UID único para evitar confusiones
     return next((t for t in turnos if t.get("uid") == uid), None)
 
 def generar_qr_png(url: str):
@@ -596,7 +588,7 @@ def render_header_institucional():
                 break
 
 # ==========================================================================
-# SESSION STATE Y PERSISTENCIA DE SESIÓN
+# SESSION STATE Y PERSISTENCIA NATIVA
 # ==========================================================================
 if "historial_turnos" not in st.session_state:
     st.session_state.historial_turnos = []
@@ -612,24 +604,9 @@ try:
     qp = st.query_params
     modo_qp = (qp.get("modo") or "").strip().lower()
     
-    # 1. Intentar recuperar desde la URL
+    # Recuperar el turno desde la URL de forma nativa (sobrevive al refresh)
     if st.session_state.mi_turno_id is None and "t" in qp:
-        val_t = qp.get("t")
-        turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == val_t or t.get("id_turno") == val_t), None)
-        if turno_encontrado:
-            st.session_state.mi_turno_id = turno_encontrado.get("uid")
-            
-    # 2. Intentar recuperar desde la memoria del celular (LocalStorage)
-    if st.session_state.mi_turno_id is None and HAS_GEO and modo_qp == "conductor":
-        uid_local = get_local_storage("mi_turno_uid")
-        if uid_local:
-            turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == uid_local), None)
-            if turno_encontrado:
-                st.session_state.mi_turno_id = turno_encontrado.get("uid")
-                try:
-                    st.query_params["t"] = turno_encontrado.get("uid")
-                except Exception:
-                    pass
+        st.session_state.mi_turno_id = qp.get("t")
         
     ahora_ts = time.time()
     
@@ -832,62 +809,49 @@ if modo_qp == "conductor":
             with col_b:
                 if st.button("Registrar otro vehículo", use_container_width=True):
                     st.session_state.mi_turno_id = None
-                    if HAS_GEO:
-                        try:
-                            delete_local_storage("mi_turno_uid")
-                        except Exception:
-                            pass
                     try:
-                        st.query_params.clear()
+                        del st.query_params["t"]
                         st.query_params["modo"] = "conductor"
                     except Exception:
                         pass
                     st.rerun()
 
         else:
-            if not HAS_GEO:
-                st.error("Falta la librería **streamlit-js-eval**. Agrégala a `requirements.txt` y redeploya la aplicación.")
-                st.stop()
-
+            # 🔧 GPS NATIVO (Sin librerías externas)
             if "geo_data" not in st.session_state:
                 st.session_state.geo_data = None
-            if "geo_error" not in st.session_state:
-                st.session_state.geo_error = None
-            if "geo_retry" not in st.session_state:
-                st.session_state.geo_retry = 0
+            
+            # Revisar si las coordenadas vienen en la URL (esto lo inyecta el script)
+            if st.session_state.geo_data is None:
+                lat_qp = qp.get("lat")
+                lon_qp = qp.get("lon")
+                if lat_qp and lon_qp:
+                    st.session_state.geo_data = {"latitude": float(lat_qp), "longitude": float(lon_qp)}
 
-            if st.session_state.geo_data is None and st.session_state.geo_error is None:
+            if st.session_state.geo_data is None:
                 st.info("📍 Verificando tu ubicación GPS... Por favor permite el acceso cuando el navegador lo solicite.")
-                loc = get_geolocation(component_key=f"geo_{st.session_state.geo_retry}")
-                if loc is not None:
-                    try:
-                        if isinstance(loc, dict) and "coords" in loc:
-                            st.session_state.geo_data = loc["coords"]
-                        else:
-                            st.session_state.geo_error = "No se pudo obtener la ubicación."
-                    except Exception:
-                        st.session_state.geo_error = "Error procesando la ubicación."
-                    st.rerun()
-                else:
-                    st.caption("Si ya otorgaste permisos, espera unos segundos. Si rechazaste, presiona el botón de abajo.")
-                    if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_1"):
-                        st.session_state.geo_retry += 1
-                        st.rerun()
-                    st.stop()
-
-            if st.session_state.geo_error:
-                st.error(
-                    f"⚠️ **No pudimos obtener tu ubicación.**\n\n"
-                    f"Detalle: {st.session_state.geo_error}\n\n"
-                    f"**¿Cómo habilitar el GPS?**\n"
-                    f"1. Toca el ícono del candado junto a la URL\n"
-                    f"2. Habilita 'Ubicación' o 'Location'\n"
-                    f"3. Recarga la página y presiona 'Reintentar'"
-                )
-                if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_2"):
-                    st.session_state.geo_error = None
-                    st.session_state.geo_data = None
-                    st.session_state.geo_retry += 1
+                
+                # Script nativo para pedir GPS y recargar la URL con los datos
+                components.html("""
+                <script>
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(function(position) {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        const url = new URL(window.parent.location.href);
+                        url.searchParams.set('lat', lat);
+                        url.searchParams.set('lon', lon);
+                        window.parent.location.href = url.toString();
+                    }, function(error) {
+                        alert("⚠️ Es obligatorio permitir el acceso a la ubicación GPS para enturnarte.");
+                    }, {timeout: 10000});
+                } else {
+                    alert("Tu navegador no soporta geolocalización.");
+                }
+                </script>
+                """, height=0)
+                
+                if st.button("Reintentar ubicación", use_container_width=True):
                     st.rerun()
                 st.stop()
 
@@ -896,9 +860,13 @@ if modo_qp == "conductor":
                 user_lon = float(st.session_state.geo_data.get("longitude"))
             except (TypeError, ValueError):
                 st.error("Los datos de ubicación recibidos no son válidos. Intenta nuevamente.")
-                if st.button("Reintentar", use_container_width=True, key="geo_retry_3"):
+                if st.button("Reintentar", use_container_width=True):
                     st.session_state.geo_data = None
-                    st.session_state.geo_retry += 1
+                    try:
+                        del st.query_params["lat"]
+                        del st.query_params["lon"]
+                    except Exception:
+                        pass
                     st.rerun()
                 st.stop()
 
@@ -916,10 +884,13 @@ if modo_qp == "conductor":
                     f"Radio permitido: **{radio_max:.1f} km**.\n\n"
                     f"Acércate a la Zona Franca de Cúcuta y presiona el botón para verificar de nuevo."
                 )
-                if st.button("Verificar ubicación de nuevo", use_container_width=True, key="geo_recheck"):
+                if st.button("Verificar ubicación de nuevo", use_container_width=True):
                     st.session_state.geo_data = None
-                    st.session_state.geo_error = None
-                    st.session_state.geo_retry += 1
+                    try:
+                        del st.query_params["lat"]
+                        del st.query_params["lon"]
+                    except Exception:
+                        pass
                     st.rerun()
                 st.stop()
 
@@ -972,13 +943,6 @@ if modo_qp == "conductor":
                         if activo:
                             st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']} del {fecha_legible(activo['fecha_hora'])}")
                             st.session_state.mi_turno_id = activo["uid"]
-                            
-                            if HAS_GEO:
-                                try:
-                                    set_local_storage("mi_turno_uid", activo["uid"])
-                                except Exception:
-                                    pass
-                                    
                             try:
                                 st.query_params["t"] = activo["uid"]
                             except Exception:
@@ -1019,15 +983,9 @@ if modo_qp == "conductor":
                             }
                             actuales.append(nuevo)
                             guardar_datos(actuales)
-                            
                             st.session_state.mi_turno_id = nuevo["uid"]
                             
-                            if HAS_GEO:
-                                try:
-                                    set_local_storage("mi_turno_uid", nuevo["uid"])
-                                except Exception:
-                                    pass
-                                    
+                            # 🔧 FIX NATIVO: Guardamos el UID en la URL
                             try:
                                 st.query_params["t"] = nuevo["uid"]
                             except Exception:
@@ -1051,13 +1009,6 @@ if modo_qp == "conductor":
                     )
                     if encontrado:
                         st.session_state.mi_turno_id = encontrado["uid"]
-                        
-                        if HAS_GEO:
-                            try:
-                                set_local_storage("mi_turno_uid", encontrado["uid"])
-                            except Exception:
-                                pass
-                                
                         try:
                             st.query_params["t"] = encontrado["uid"]
                         except Exception:
@@ -1156,7 +1107,6 @@ if modo_qp == "vigilante":
                                 st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
 
                             st.markdown("<br>", unsafe_allow_html=True)
-                            # 🔧 FIX: Usar UID para evitar colisiones
                             if st.button("Ingreso Autorizado", key=f"btn_in_{t['uid']}", use_container_width=True):
                                 st.session_state.historial_turnos.append(copy.deepcopy(turnos))
                                 hora_conf = ahora_str()
@@ -1189,7 +1139,6 @@ if modo_qp == "vigilante":
                                 st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
 
                             st.markdown("<br>", unsafe_allow_html=True)
-                            # 🔧 FIX: Usar UID para evitar colisiones
                             if st.button("Salida Autorizada", key=f"btn_out_{t['uid']}", use_container_width=True):
                                 st.session_state.historial_turnos.append(copy.deepcopy(turnos))
                                 hora_conf = ahora_str()
@@ -1345,7 +1294,6 @@ if modo_qp == "operador":
             lista = filtrar(turnos_g)
 
             if lista:
-                # 🔧 FIX: Mostramos la fecha en el selector para distinguir T-001 de diferentes días
                 opciones_dict = {
                     f"{t['id_turno']} ({fecha_legible(t.get('fecha_hora',''))}) — {t['placa']} — {t['estado']}": t.get("uid", "")
                     for t in lista
@@ -1430,7 +1378,6 @@ if modo_qp == "operador":
                                     for t in turnos_g
                                 )
                                 
-                                # 🔧 FIX: Solo buscar duplicados en la jornada actual (después de las 18:00)
                                 ultimo_corte = obtener_ultimo_corte()
                                 corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
                                 tiquet_duplicado = any(
