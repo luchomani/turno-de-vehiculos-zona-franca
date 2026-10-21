@@ -1231,7 +1231,6 @@ if modo_qp == "operador":
                         idx_bodega = lista_bodegas.index(bodega_actual) if bodega_actual in lista_bodegas else 0
                         nueva_bodega = st.selectbox("Bodega de Destino", lista_bodegas, index=idx_bodega)
                         
-                        # 🔧 FIX: Bloquear la edición de las observaciones del conductor
                         st.text_area(
                             "Observaciones del Conductor (Solo lectura)", 
                             value=turno_sel.get('observaciones_conductor', ''), 
@@ -1324,8 +1323,6 @@ if modo_qp == "operador":
                                             t["telefono"] = nuevo_telefono
                                             t["bodega"] = nueva_bodega if nueva_bodega != "Seleccione una bodega..." else ""
                                             
-                                            # Ya NO actualizamos observaciones_conductor aquí porque está bloqueado
-                                            
                                             t["tipo_movimiento"] = nuevo_tipo
                                             t["estado"] = nuevo_estado
                                             t["mensaje_admin"] = mensaje
@@ -1337,43 +1334,6 @@ if modo_qp == "operador":
                                     guardar_datos(turnos_g)
                                     st.success("Cambios guardados exitosamente.")
                                     st.rerun()
-
-                st.markdown("---")
-                st.markdown("##### Alternar visibilidad en pantalla (rápido)")
-
-                # 🔧 FIX: Ocultar la columna Placa usando un UID interno
-                df_quick = pd.DataFrame([
-                    {
-                        "UID": t.get("uid", ""),
-                        "Turno": t["id_turno"],
-                        "Estado": t["estado"],
-                        "Visible": bool(t.get("mostrar_en_pantalla", False)),
-                    }
-                    for t in turnos_g
-                ])
-
-                edited = st.data_editor(
-                    df_quick,
-                    use_container_width=True,
-                    hide_index=True,
-                    disabled=["UID", "Turno", "Estado"],
-                    column_config={
-                        "UID": None, # Oculta esta columna
-                        "Visible": st.column_config.CheckboxColumn("En pantalla")
-                    },
-                    key="de_vis",
-                )
-
-                if st.button("Aplicar cambios de visibilidad", key="btn_vis"):
-                    st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
-                    for _, row in edited.iterrows():
-                        for t in turnos_g:
-                            if t.get("uid") == row["UID"]:
-                                t["mostrar_en_pantalla"] = bool(row["Visible"])
-                                break
-                    guardar_datos(turnos_g)
-                    st.success("Visibilidad actualizada.")
-                    st.rerun()
             else:
                 st.info("No hay turnos que coincidan con el filtro.")
 
