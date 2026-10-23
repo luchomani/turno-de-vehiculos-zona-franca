@@ -28,7 +28,6 @@ except ImportError:
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
 # ==========================================================================
-# Asegúrate de que el nombre del archivo coincida con el de tu imagen
 st.set_page_config(
     page_title="Turnos y Accesos | Zona Franca Santander",
     page_icon="LOGO SANTANDER.png", 
@@ -77,7 +76,6 @@ st.markdown("""
         font-size: 15px !important;
     }
 
-    /* FIX: Anulación agresiva de bordes rojos en Inputs */
     div[data-baseweb="input"]:focus-within,
     div[data-baseweb="base-input"]:focus-within,
     div[data-baseweb="select"]:focus-within,
@@ -147,7 +145,6 @@ st.markdown("""
         border: 1px solid var(--zfc-green-main) !important;
     }
 
-    /* FIX: Anulación del borde rojo en las Pestañas (Tabs) */
     .stTabs [data-baseweb="tab-list"] { gap: 6px; }
     .stTabs [data-baseweb="tab"] {
         background-color: #EDF1EE;
@@ -169,7 +166,6 @@ st.markdown("""
         background-color: transparent !important;
     }
 
-    /* Checkboxes verdes */
     div[data-testid="stCheckbox"] label span div[data-checked="true"] {
         background-color: var(--zfc-green-main) !important;
         border-color: var(--zfc-green-main) !important;
@@ -209,13 +205,6 @@ st.markdown("""
     }
     .ticket-info { font-size: 14px; color: #D8E3DC; margin: 4px 0; }
     .ticket-divider { border-color: rgba(255,255,255,0.18); margin: 14px 0; }
-    .ticket-mensaje {
-        background: rgba(255,255,255,0.10);
-        padding: 12px;
-        border-radius: 8px;
-        margin-top: 14px;
-        border-left: 3px solid #FFD966;
-    }
 
     .badge {
         display: inline-block;
@@ -392,6 +381,7 @@ DEFAULT_CONFIG = {
 }
 
 def ahora_str():
+    # HORA EXACTA DE COLOMBIA (UTC-5)
     colombia_tz = timezone(timedelta(hours=-5))
     return datetime.now(colombia_tz).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -417,23 +407,38 @@ def obtener_inicio_jornada(dt=None):
     else:
         return dt.replace(hour=0, minute=0, second=0, microsecond=0)
 
-def obtener_letra_jornada(inicio):
-    dia = inicio.timetuple().tm_yday
+def obtener_letra_jornada(inicio_jornada):
+    # Base perfecta: Lunes 1 de Enero de 2024
+    base_date = datetime(2024, 1, 1, tzinfo=timezone(timedelta(hours=-5)))
     
-    if inicio.weekday() == 6: # Domingo
-        idx = (dia * 2) - 1
-    elif inicio.weekday() == 5: # Sábado
-        if inicio.hour >= 12:
-            idx = (dia * 2) - 1 # Tarde
+    fecha_base = base_date.date()
+    fecha_inicio = inicio_jornada.date()
+    
+    dias_totales = (fecha_inicio - fecha_base).days
+    
+    semanas_completas = dias_totales // 7
+    dias_restantes = dias_totales % 7
+    
+    # 13 jornadas por semana completa (Lun-Sab: 2, Dom: 1)
+    jornadas = semanas_completas * 13
+    
+    for i in range(dias_restantes):
+        dia_semana = (fecha_base + timedelta(days=i)).weekday()
+        if dia_semana == 6:
+            jornadas += 1
         else:
-            idx = (dia * 2) - 2 # Mañana
-    else: # Lunes a Viernes
-        if inicio.hour >= 18:
-            idx = (dia * 2) - 1 # Noche
-        else:
-            idx = (dia * 2) - 2 # Día
+            jornadas += 2
             
-    letra = chr(65 + (idx % 26))
+    if inicio_jornada.weekday() == 6:
+        pass
+    elif inicio_jornada.weekday() == 5:
+        if inicio_jornada.hour >= 12:
+            jornadas += 1
+    else:
+        if inicio_jornada.hour >= 18:
+            jornadas += 1
+            
+    letra = chr(65 + (jornadas % 26))
     return letra
 
 def obtener_jornada_str(fecha_hora_str):
@@ -787,20 +792,12 @@ if modo_qp == "conductor":
                 if not actual:
                     st.warning("Tu turno ya no está disponible.")
                     return
-                
-                msg_raw = actual.get("mensaje_admin", "")
-                if not msg_raw or msg_raw == "En espera de autorización":
-                    msg = "Dirígete a la portería"
-                else:
-                    msg = msg_raw
 
                 st.markdown(f"""
                 <div class="ticket-card">
-                    <div class="ticket-label">Turno Asignado</div>
-                    <hr class="ticket-divider">
-                    <div class="ticket-label">Placa del Vehículo</div>
+                    <div class="ticket-label">PLACA DEL VEHÍCULO</div>
                     <div class="ticket-placa">{actual['placa']}</div>
-                    <div class="ticket-label" style="margin-top:18px;">Número de Ficho</div>
+                    <div class="ticket-label" style="margin-top:18px;">NÚMERO DE FICHO</div>
                     <div class="ticket-turno">{actual['id_turno']}</div>
                     <hr class="ticket-divider">
                     <div class="ticket-info"><b>Destino:</b> {actual.get('bodega','—')}</div>
@@ -809,10 +806,6 @@ if modo_qp == "conductor":
                         Registrado: {fecha_legible(actual.get('fecha_hora',''))}
                     </div>
                     <div style="margin-top:16px;">{badge_html(actual.get('estado',''))}</div>
-                    <div class="ticket-mensaje">
-                        <div class="ticket-label" style="font-size:10px;">Mensaje del Operador</div>
-                        <div style="color:#FFD966; font-weight:700; font-size:15px; margin-top:4px;">{msg}</div>
-                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -918,7 +911,6 @@ if modo_qp == "conductor":
                             
                             ids_existentes = []
                             for t in turnos_jornada:
-                                # Extrae el número sin importar el formato que haya puesto el operador
                                 match = re.search(r'(\d+)', t.get("id_turno", ""))
                                 if match:
                                     ids_existentes.append(int(match.group(1)))
