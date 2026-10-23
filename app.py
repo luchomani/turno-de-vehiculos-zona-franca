@@ -11,6 +11,7 @@ import math
 import time
 import copy
 import uuid
+import re
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
@@ -27,9 +28,10 @@ except ImportError:
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
 # ==========================================================================
+# Asegúrate de que el nombre del archivo coincida con el de tu imagen
 st.set_page_config(
     page_title="Turnos y Accesos | Zona Franca Santander",
-    page_icon="🚛",
+    page_icon="LOGO SANTANDER.png", 
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -40,9 +42,11 @@ st.set_page_config(
 st.markdown("""
 <style>
     :root {
-        --zfc-green-dark:  #12402A;
+        --zfc-green-dark:  #0F3A24;
         --zfc-green-main:  #1B4D3E;
         --zfc-green-mid:   #2C6B56;
+        --zfc-light-green: #B8D4C5;
+        --zfc-olive:       #556B2F;
         --zfc-bg:          #F5F7F6;
         --zfc-card:        #FFFFFF;
         --zfc-text:        #2C3E50;
@@ -73,6 +77,18 @@ st.markdown("""
         font-size: 15px !important;
     }
 
+    /* FIX: Anulación agresiva de bordes rojos en Inputs */
+    div[data-baseweb="input"]:focus-within,
+    div[data-baseweb="base-input"]:focus-within,
+    div[data-baseweb="select"]:focus-within,
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus,
+    .stNumberInput > div > div > input:focus {
+        border-color: var(--zfc-green-main) !important;
+        box-shadow: 0 0 0 2px rgba(27, 77, 62, 0.2) !important;
+        outline: none !important;
+    }
+
     .stTextInput > div > div > input,
     .stTextArea > div > div > textarea,
     .stNumberInput > div > div > input {
@@ -82,19 +98,6 @@ st.markdown("""
         border-radius: 8px !important;
         font-size: 16px !important;
         padding: 12px 14px !important;
-    }
-
-    .stTextInput > div > div > input::placeholder,
-    .stTextArea > div > div > textarea::placeholder,
-    .stNumberInput > div > div > input::placeholder {
-        color: #9CA3AF !important;
-        opacity: 1 !important;
-    }
-
-    .stTextInput > div > div > input:focus,
-    .stTextArea > div > div > textarea:focus {
-        border-color: #1B4D3E !important;
-        box-shadow: 0 0 0 2px rgba(27,77,62,0.15) !important;
     }
 
     .stSelectbox > div > div {
@@ -122,7 +125,7 @@ st.markdown("""
         background-color: var(--zfc-green-main) !important;
         color: #FFFFFF !important;
         border-radius: 8px;
-        border: none;
+        border: 1px solid var(--zfc-green-main) !important;
         font-weight: 700;
         font-size: 16px;
         padding: 0.8rem 1.2rem;
@@ -131,6 +134,7 @@ st.markdown("""
     .stButton>button:hover {
         background-color: var(--zfc-green-mid) !important;
         color: #FFFFFF !important;
+        border-color: var(--zfc-green-mid) !important;
     }
 
     .stFormSubmitButton > button {
@@ -140,8 +144,10 @@ st.markdown("""
         font-size: 17px;
         padding: 0.9rem 1.5rem;
         border-radius: 8px;
+        border: 1px solid var(--zfc-green-main) !important;
     }
 
+    /* FIX: Anulación del borde rojo en las Pestañas (Tabs) */
     .stTabs [data-baseweb="tab-list"] { gap: 6px; }
     .stTabs [data-baseweb="tab"] {
         background-color: #EDF1EE;
@@ -149,10 +155,24 @@ st.markdown("""
         padding: 10px 18px;
         font-weight: 600;
         color: #2C3E50;
+        border-bottom: none !important;
     }
     .stTabs [aria-selected="true"] {
         background-color: var(--zfc-green-main) !important;
         color: #FFFFFF !important;
+    }
+    div[data-baseweb="tab-highlight"] {
+        background-color: var(--zfc-green-main) !important;
+        height: 3px !important;
+    }
+    div[data-baseweb="tab-border"] {
+        background-color: transparent !important;
+    }
+
+    /* Checkboxes verdes */
+    div[data-testid="stCheckbox"] label span div[data-checked="true"] {
+        background-color: var(--zfc-green-main) !important;
+        border-color: var(--zfc-green-main) !important;
     }
 
     .ticket-card {
@@ -207,7 +227,7 @@ st.markdown("""
         text-transform: uppercase;
     }
     .badge-espera     { background: #FBF3D9; color: #8A6A00; border: 1px solid #E5D7A0; }
-    .badge-ingresar   { background: #E6F0EB; color: #12402A; border: 1px solid #B8D4C5; }
+    .badge-ingresar   { background: #E6F0EB; color: #12402A; border: 1px solid var(--zfc-light-green); }
     .badge-salir      { background: #FCE9E9; color: #9B1C1C; border: 1px solid #E8BFBF; }
     .badge-zf         { background: #E0E7FF; color: #233876; border: 1px solid #B4C0E8; }
     .badge-finalizado { background: #EDEDED; color: #4B5563; border: 1px solid #D5D5D5; }
@@ -246,7 +266,7 @@ st.markdown("""
 
     .card-ingreso {
         background: #FFFFFF;
-        border: 1px solid #B8D4C5;
+        border: 1px solid var(--zfc-light-green);
         border-left: 4px solid var(--zfc-green-main);
         padding: 16px;
         border-radius: 0 0 8px 8px;
@@ -299,7 +319,7 @@ st.markdown("""
 
     .role-card {
         background: #FFFFFF;
-        border: 1px solid var(--zfc-border);
+        border: 1px solid var(--zfc-light-green);
         border-top: 4px solid var(--zfc-green-main);
         border-radius: 10px;
         padding: 28px 20px;
@@ -338,7 +358,7 @@ st.markdown("""
     }
 
     div[data-testid="stMetricValue"] { color: var(--zfc-green-dark) !important; font-weight: 700; }
-    div[data-testid="stMetricLabel"] { color: #556B2F !important; font-weight: 600; }
+    div[data-testid="stMetricLabel"] { color: var(--zfc-olive) !important; font-weight: 600; }
     div[data-testid="stAlert"] { border-radius: 8px; }
 </style>
 """, unsafe_allow_html=True)
@@ -397,6 +417,19 @@ def obtener_ultimo_corte():
         ayer = ahora - timedelta(days=1)
         return ayer.replace(hour=18, minute=0, second=0, microsecond=0)
 
+def obtener_letra_jornada(dt_obj):
+    dia_del_ano = dt_obj.timetuple().tm_yday
+    letra = chr(65 + ((dia_del_ano - 1) % 26)) 
+    return letra
+
+def obtener_jornada(fecha_hora_str):
+    dt = parse_fecha(fecha_hora_str)
+    if not dt: return ""
+    if dt.hour >= 18:
+        return dt.strftime("%Y-%m-%d")
+    else:
+        return (dt - timedelta(days=1)).strftime("%Y-%m-%d")
+
 def _migrar_campos(item):
     defaults = {
         "uid": str(uuid.uuid4()),
@@ -436,7 +469,6 @@ def cargar_config():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-                
                 if cfg.get("config_version", 1) < DEFAULT_CONFIG["config_version"]:
                     cfg["config_version"] = DEFAULT_CONFIG["config_version"]
                     cfg["contrasena_admin"] = DEFAULT_CONFIG["contrasena_admin"]
@@ -444,7 +476,6 @@ def cargar_config():
                     cfg["contrasena_vigilante"] = DEFAULT_CONFIG["contrasena_vigilante"]
                     cfg["bodegas"] = DEFAULT_CONFIG["bodegas"]
                     guardar_config(cfg)
-                    
                 return {**DEFAULT_CONFIG, **cfg}
         except Exception:
             pass
@@ -581,9 +612,6 @@ def render_header_institucional():
 # ==========================================================================
 # SESSION STATE
 # ==========================================================================
-if "historial_turnos" not in st.session_state:
-    st.session_state.historial_turnos = []
-
 if "auth_operador" not in st.session_state:
     st.session_state.auth_operador = False
 if "auth_vigilante" not in st.session_state:
@@ -650,10 +678,10 @@ if modo_qp == "pantalla":
         with c2:
             st.markdown("""
             <div style="text-align:center; padding: 8px 0;">
-                <div style="color:#12402A; font-size:32px; font-weight:900;">
+                <div style="color:#0F3A24; font-size:32px; font-weight:900;">
                     CONTROL DE ACCESOS EN TIEMPO REAL
                 </div>
-                <div style="color:#6B7280; font-size:14px; letter-spacing:3px; margin-top:6px;">
+                <div style="color:#556B2F; font-size:14px; letter-spacing:3px; margin-top:6px;">
                     ZONA FRANCA DE CÚCUTA · ZONA FRANCA SANTANDER
                 </div>
             </div>
@@ -720,7 +748,7 @@ if modo_qp == "conductor":
         padding: 16px 20px;
         border-radius: 8px;
         margin: 15px 0 25px 0;
-        color: #12402A;
+        color: #0F3A24;
         box-shadow: 0 4px 6px rgba(0,0,0,0.04);
         font-size: 15px;
         font-weight: 600;
@@ -747,7 +775,13 @@ if modo_qp == "conductor":
                 if not actual:
                     st.warning("Tu turno ya no está disponible.")
                     return
-                msg = actual.get("mensaje_admin") or "En espera de autorización"
+                
+                # FIX: Solo forzar el mensaje si está vacío o es el texto viejo exacto.
+                msg_raw = actual.get("mensaje_admin", "")
+                if not msg_raw or msg_raw == "En espera de autorización":
+                    msg = "Dirígete a la portería"
+                else:
+                    msg = msg_raw
 
                 st.markdown(f"""
                 <div class="ticket-card">
@@ -807,7 +841,7 @@ if modo_qp == "conductor":
                     st.rerun()
 
         else:
-            st.info("📍 Ubicación validada. Puedes continuar con tu registro.")
+            st.info("Ubicación validada. Puedes continuar con tu registro.")
             st.markdown("Completa tus datos para asignarte un turno.")
             st.caption("Los campos con (*) son obligatorios. La bodega es opcional.")
 
@@ -842,8 +876,9 @@ if modo_qp == "conductor":
                     if placa and len(placa) < 5: errores.append("La placa debe tener al menos 5 caracteres.")
 
                     if errores:
-                        st.error("⚠️ Corrige los siguientes errores:\n\n" + "\n".join(f"• {e}" for e in errores))
+                        st.error("Corrige los siguientes errores:\n\n" + "\n".join(f"• {e}" for e in errores))
                     else:
+                        # FIX: Leer datos frescos para evitar colisiones de concurrencia
                         actuales = cargar_datos()
                         placa_clean = placa.replace(" ", "").upper()
                         
@@ -862,16 +897,21 @@ if modo_qp == "conductor":
                                 pass
                             st.rerun()
                         else:
-                            st.session_state.historial_turnos.append(copy.deepcopy(actuales))
-                            
                             ultimo_corte = obtener_ultimo_corte()
                             corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
+                            letra_jornada = obtener_letra_jornada(ultimo_corte)
                             
                             turnos_jornada = [t for t in actuales if t.get("fecha_hora", "") >= corte_str]
                             
-                            ids_existentes = [int(t["id_turno"].split("-")[1]) for t in turnos_jornada if t.get("id_turno", "").startswith("T-") and t["id_turno"].split("-")[1].isdigit()]
+                            # FIX: Extraer números usando regex de forma segura (ignora formatos raros)
+                            ids_existentes = []
+                            for t in turnos_jornada:
+                                match = re.search(r'(\d+)', t.get("id_turno", ""))
+                                if match:
+                                    ids_existentes.append(int(match.group(1)))
+                                    
                             nuevo_num = max(ids_existentes) + 1 if ids_existentes else 1
-                            turno_str = f"T-{nuevo_num:03d}"
+                            turno_str = f"T-{nuevo_num:03d}-{letra_jornada}"
 
                             nuevo = {
                                 "uid": str(uuid.uuid4()),
@@ -884,7 +924,7 @@ if modo_qp == "conductor":
                                 "tipo_movimiento": "Ingresar",
                                 "estado": "En Espera",
                                 "fecha_hora": ahora_str(),
-                                "mensaje_admin": "En espera de autorización",
+                                "mensaje_admin": "Dirígete a la portería",
                                 "mostrar_en_pantalla": False,
                                 "fecha_autorizacion": None,
                                 "fecha_ingreso_zf": None,
@@ -978,6 +1018,8 @@ if modo_qp == "vigilante":
         @st.fragment(run_every=5)
         def panel_vigilante():
             turnos = cargar_datos()
+            
+            busqueda_vig = st.text_input("Buscar turno asignado o Placa", key="search_vig").upper().strip()
 
             pendientes_ing = [
                 t for t in turnos
@@ -992,6 +1034,10 @@ if modo_qp == "vigilante":
                 and "FINALIZADO" not in (t.get("estado") or "").upper()
                 and not t.get("fecha_salida_zf")
             ]
+            
+            if busqueda_vig:
+                pendientes_ing = [t for t in pendientes_ing if busqueda_vig in t.get("placa", "").upper() or busqueda_vig in t.get("id_turno", "").upper()]
+                pendientes_sal = [t for t in pendientes_sal if busqueda_vig in t.get("placa", "").upper() or busqueda_vig in t.get("id_turno", "").upper()]
 
             m1, m2, m3 = st.columns(3)
             m1.metric("Pendientes de Ingreso", len(pendientes_ing))
@@ -1015,13 +1061,11 @@ if modo_qp == "vigilante":
                             st.caption(f"Registrado: {fecha_legible(t.get('fecha_hora',''))}")
                             if t.get("observaciones_conductor"):
                                 st.info(f"**Observación del Conductor:** {t['observaciones_conductor']}")
-                            if t.get("mensaje_admin"):
-                                st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
 
                             st.markdown("<br>", unsafe_allow_html=True)
                             if st.button("Ingreso Autorizado", key=f"btn_in_{t['uid']}", use_container_width=True):
-                                st.session_state.historial_turnos.append(copy.deepcopy(turnos))
                                 hora_conf = ahora_str()
+                                # FIX: Leer datos frescos antes de modificar para no sobreescribir otros cambios
                                 todos = cargar_datos()
                                 for x in todos:
                                     if x["uid"] == t["uid"]:
@@ -1031,6 +1075,8 @@ if modo_qp == "vigilante":
                                         break
                                 guardar_datos(todos)
                                 st.success(f"Ingreso autorizado para {t['placa']} a las {hora_conf}")
+                                st.toast("Proceso Exitoso", icon=":material/check_circle:")
+                                time.sleep(1)
                                 st.rerun()
 
             with col_s:
@@ -1047,13 +1093,11 @@ if modo_qp == "vigilante":
                                 st.caption(f"Ingresó: {fecha_legible(t['fecha_ingreso_zf'])}")
                             if t.get("observaciones_conductor"):
                                 st.info(f"**Observación del Conductor:** {t['observaciones_conductor']}")
-                            if t.get("mensaje_admin"):
-                                st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
 
                             st.markdown("<br>", unsafe_allow_html=True)
                             if st.button("Salida Autorizada", key=f"btn_out_{t['uid']}", use_container_width=True):
-                                st.session_state.historial_turnos.append(copy.deepcopy(turnos))
                                 hora_conf = ahora_str()
+                                # FIX: Leer datos frescos antes de modificar
                                 todos = cargar_datos()
                                 for x in todos:
                                     if x["uid"] == t["uid"]:
@@ -1063,6 +1107,8 @@ if modo_qp == "vigilante":
                                         break
                                 guardar_datos(todos)
                                 st.success(f"Salida autorizada para {t['placa']} a las {hora_conf}")
+                                st.toast("Proceso Exitoso", icon=":material/check_circle:")
+                                time.sleep(1)
                                 st.rerun()
 
         panel_vigilante()
@@ -1182,13 +1228,10 @@ if modo_qp == "operador":
         if not turnos_g:
             st.info("No hay turnos registrados.")
         else:
-            if st.session_state.historial_turnos:
-                if st.button("Deshacer Última Acción", type="primary", key="btn_undo"):
-                    ultimo_estado = st.session_state.historial_turnos.pop()
-                    guardar_datos(ultimo_estado)
-                    st.success("Se ha deshecho la última acción correctamente.")
-                    st.rerun()
-            
+            busqueda_op = st.text_input("Buscar turno asignado o Placa", key="search_op").upper().strip()
+            if busqueda_op:
+                turnos_g = [t for t in turnos_g if busqueda_op in t.get("placa", "").upper() or busqueda_op in t.get("id_turno", "").upper()]
+
             filtro = st.selectbox(
                 "Filtrar por estado:",
                 ["Todos", "En Espera", "Autorizados", "En Zona Franca", "Finalizados"],
@@ -1217,29 +1260,27 @@ if modo_qp == "operador":
 
                 if turno_sel:
                     with st.form(f"form_g_{id_sel}"):
-                        st.markdown("##### Editar Datos del Conductor")
+                        st.markdown("##### Editar Datos")
                         
                         nuevo_tiquet = st.text_input("Número de Ficho (Tiquet)", value=turno_sel.get('id_turno', '')).upper().strip()
-                        
                         nueva_placa = st.text_input("Placa del Vehículo", value=turno_sel.get('placa', '')).upper().strip()
-                        nuevo_nombre = st.text_input("Nombre del Conductor", value=turno_sel.get('nombre', '')).title().strip()
-                        nueva_cedula = st.text_input("Cédula", value=turno_sel.get('cedula', '')).strip()
-                        nuevo_telefono = st.text_input("Teléfono", value=turno_sel.get('telefono', '')).strip()
+                        
+                        # Campos Bloqueados
+                        st.text_input("Nombre del Conductor", value=turno_sel.get('nombre', ''), disabled=True)
+                        st.text_input("Cédula", value=turno_sel.get('cedula', ''), disabled=True)
+                        st.text_input("Teléfono", value=turno_sel.get('telefono', ''), disabled=True)
                         
                         lista_bodegas = ["Seleccione una bodega..."] + CONFIG.get("bodegas", [])
                         bodega_actual = turno_sel.get("bodega", "")
                         idx_bodega = lista_bodegas.index(bodega_actual) if bodega_actual in lista_bodegas else 0
-                        nueva_bodega = st.selectbox("Bodega de Destino", lista_bodegas, index=idx_bodega)
+                        st.selectbox("Bodega de Destino", lista_bodegas, index=idx_bodega, disabled=True)
                         
                         st.text_area(
-                            "Observaciones del Conductor (Solo lectura)", 
+                            "Observaciones del Conductor", 
                             value=turno_sel.get('observaciones_conductor', ''), 
-                            disabled=True,
-                            help="Este campo solo puede ser modificado por el conductor al momento de registrarse."
+                            disabled=True
                         )
                         
-                        st.caption(f"**Registrado originalmente:** {fecha_legible(turno_sel.get('fecha_hora',''))}")
-
                         st.markdown("---")
                         st.markdown("##### Estado y Gestión")
                         
@@ -1259,11 +1300,6 @@ if modo_qp == "operador":
 
                         nuevo_estado = st.selectbox("Estado", estados_posibles, index=idx_estado)
 
-                        mensaje = st.text_input(
-                            "Mensaje para el conductor (ej: Muelle 3)",
-                            value=turno_sel.get("mensaje_admin", ""),
-                        )
-
                         mostrar = st.checkbox(
                             "Mostrar en pantalla pública",
                             value=bool(turno_sel.get("mostrar_en_pantalla", False)),
@@ -1279,63 +1315,70 @@ if modo_qp == "operador":
                         if st.form_submit_button("Guardar Cambios", use_container_width=True):
                             if eliminar:
                                 if pass_confirm != CONFIG.get("contrasena_admin"):
-                                    st.error("❌ Contraseña incorrecta. No se puede eliminar el turno.")
+                                    st.error("Contraseña incorrecta. No se puede eliminar el turno.")
+                                    st.toast("Proceso Denegado", icon=":material/error:")
                                 else:
-                                    st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
-                                    turnos_g = [t for t in turnos_g if t.get("uid") != id_sel]
-                                    guardar_datos(turnos_g)
-                                    st.success(f"Turno {turno_sel['id_turno']} eliminado.")
+                                    # FIX: Eliminar leyendo fresco para no borrar otros
+                                    todos = cargar_datos()
+                                    todos = [t for t in todos if t.get("uid") != id_sel]
+                                    guardar_datos(todos)
+                                    st.success(f"Turno {turno_sel['id_turno']} eliminado correctamente.")
+                                    st.toast("Proceso Exitoso", icon=":material/check_circle:")
+                                    time.sleep(1)
                                     st.rerun()
                             else:
+                                # FIX: Leer datos frescos ANTES de validar y modificar
+                                todos_frescos = cargar_datos()
+                                
                                 nueva_placa_clean = nueva_placa.replace(" ", "").upper()
                                 placa_duplicada = any(
                                     t.get("placa", "").replace(" ", "").upper() == nueva_placa_clean 
                                     and t.get("uid") != id_sel 
                                     and "FINALIZADO" not in (t.get("estado") or "").upper()
-                                    for t in turnos_g
+                                    for t in todos_frescos
                                 )
                                 
-                                ultimo_corte = obtener_ultimo_corte()
-                                corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
+                                jornada_turno_sel = obtener_jornada(turno_sel.get("fecha_hora", ""))
+                                
                                 tiquet_duplicado = any(
                                     t.get("id_turno") == nuevo_tiquet 
-                                    and t.get("fecha_hora", "") >= corte_str
                                     and t.get("uid") != id_sel 
-                                    for t in turnos_g
+                                    and "FINALIZADO" not in (t.get("estado") or "").upper()
+                                    and obtener_jornada(t.get("fecha_hora", "")) == jornada_turno_sel
+                                    for t in todos_frescos
                                 )
 
                                 if placa_duplicada:
-                                    st.error(f"❌ La placa {nueva_placa} ya está registrada en otro turno activo.")
+                                    st.error(f"La placa {nueva_placa} ya está registrada en otro turno activo.")
+                                    st.toast("Proceso Denegado", icon=":material/error:")
                                 elif tiquet_duplicado:
-                                    st.error(f"❌ El Ficho {nuevo_tiquet} ya está en uso en la jornada actual. Por favor asigne uno diferente.")
+                                    st.error(f"El Ficho {nuevo_tiquet} ya está en uso en esta misma jornada. Por favor asigne uno diferente.")
+                                    st.toast("Proceso Denegado", icon=":material/error:")
                                 elif not nuevo_tiquet:
-                                    st.error("❌ El número de Ficho no puede estar vacío.")
+                                    st.error("El número de Ficho no puede estar vacío.")
+                                    st.toast("Proceso Denegado", icon=":material/error:")
                                 else:
-                                    st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
-                                    for t in turnos_g:
+                                    # FIX: Aplicar cambios a los datos frescos y guardar
+                                    for t in todos_frescos:
                                         if t.get("uid") == id_sel:
                                             antes = (t.get("estado") or "").upper()
                                             
                                             t["id_turno"] = nuevo_tiquet
                                             t["placa"] = nueva_placa_clean
-                                            t["nombre"] = nuevo_nombre
-                                            t["cedula"] = nueva_cedula
-                                            t["telefono"] = nuevo_telefono
-                                            t["bodega"] = nueva_bodega if nueva_bodega != "Seleccione una bodega..." else ""
-                                            
                                             t["tipo_movimiento"] = nuevo_tipo
                                             t["estado"] = nuevo_estado
-                                            t["mensaje_admin"] = mensaje
                                             t["mostrar_en_pantalla"] = mostrar
                                             
                                             if "AUTORIZADO" in nuevo_estado.upper() and "AUTORIZADO" not in antes:
                                                 t["fecha_autorizacion"] = ahora_str()
                                             break
-                                    guardar_datos(turnos_g)
+                                    guardar_datos(todos_frescos)
                                     st.success("Cambios guardados exitosamente.")
+                                    st.toast("Proceso Exitoso", icon=":material/check_circle:")
+                                    time.sleep(1)
                                     st.rerun()
             else:
-                st.info("No hay turnos que coincidan con el filtro.")
+                st.info("No hay turnos que coincidan con la búsqueda o el filtro.")
 
     # --- PANTALLA ---
     with tab_pantalla:
@@ -1443,7 +1486,7 @@ if modo_qp == "operador":
                     "titulo": "PANTALLA TV",
                     "subtitulo": "Televisor informativo",
                     "descripcion": "Abre este enlace en las pantallas para mostrar vehículos autorizados.",
-                    "color_hex": "#12402A",
+                    "color_hex": "#0F3A24",
                     "archivo_png": "qr_pantalla_zfc.png",
                 },
             ]
@@ -1567,7 +1610,7 @@ if modo_qp == "operador":
                     "bodegas": [l.strip() for l in bodegas_txt.split("\n") if l.strip()],
                 }
                 guardar_config(cfg)
-                st.success("Configuración guardada.")
+                st.success("Configuración guardada exitosamente.")
                 st.rerun()
 
         st.markdown("---")
@@ -1593,7 +1636,6 @@ if modo_qp == "operador":
             use_container_width=True,
             key="clean_todos_hoy",
         ):
-            st.session_state.historial_turnos.append(copy.deepcopy(turnos_actuales))
             guardar_datos([])
             st.success("Se eliminaron todos los turnos. Sistema limpio.")
             st.rerun()
