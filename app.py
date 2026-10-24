@@ -220,10 +220,8 @@ def ahora_str():
     return datetime.now(colombia_tz).strftime("%Y-%m-%d %H:%M:%S")
 
 def obtener_inicio_periodo(dt=None):
-    # SOLUCIÓN AL ERROR: Si llega un string, lo convertimos a datetime automáticamente
     if isinstance(dt, str):
         dt = parse_fecha(dt)
-        
     if not dt:
         dt = datetime.now(timezone(timedelta(hours=-5)))
     
@@ -233,14 +231,12 @@ def obtener_inicio_periodo(dt=None):
         if dt.hour >= 18:
             return dt.replace(hour=18, minute=0, second=0, microsecond=0)
         else:
-            # Lunes antes de las 18:00. Inició el sábado a las 12:00
             return (dt - timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0)
             
     elif wd in [1, 2, 3, 4]: # Martes a Viernes
         if dt.hour >= 18:
             return dt.replace(hour=18, minute=0, second=0, microsecond=0)
         else:
-            # El periodo inició el día anterior a las 18:00
             return (dt - timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
             
     elif wd == 5: # Sábado
@@ -250,29 +246,27 @@ def obtener_inicio_periodo(dt=None):
             return (dt - timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
             
     elif wd == 6: # Domingo
-        # Inició el sábado a las 12:00
         return (dt - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
 
 def obtener_letra_periodo(inicio_periodo):
-    base = datetime(2024, 1, 1, tzinfo=timezone(timedelta(hours=-5))) # Lunes 1 de Enero de 2024
+    base = datetime(2024, 1, 1, tzinfo=timezone(timedelta(hours=-5)))
     if inicio_periodo < base:
         return "A"
     
-    resets = 1 # El primer periodo (A)
+    resets = 1
     d = base
     
     while d < inicio_periodo:
         if d.weekday() == 0: # Lunes
-            resets += 1 # Lunes 18:00
+            resets += 1
             d += timedelta(days=1)
         elif d.weekday() in [1, 2, 3, 4]: # Martes a Viernes
-            resets += 1 # 18:00
+            resets += 1
             d += timedelta(days=1)
         elif d.weekday() == 5: # Sábado
-            resets += 1 # Sábado 12:00
+            resets += 1
             d += timedelta(days=1)
         elif d.weekday() == 6: # Domingo
-            # No hay resets
             d += timedelta(days=1)
             
     return chr(65 + ((resets - 1) % 26))
@@ -295,10 +289,10 @@ def _migrar_campos(item):
     for k, v in defaults.items():
         item.setdefault(k, v)
 
-# --- CONEXIÓN A BASE DE DATOS (NEON CON CONTRASEÑA ACTUALIZADA) ---
+# --- CONEXIÓN A BASE DE DATOS (NEON) ---
 DATABASE_URL = st.secrets.get("DATABASE_URL", "postgresql://neondb_owner:npg_heCBkPc0r5Qx@ep-weathered-art-b74v5gzj-pooler.c-13.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
 
-@st.cache_data(ttl=60) # Caché de 60 segundos
+@st.cache_data(ttl=60)
 def cargar_datos():
     if DATABASE_URL:
         try:
@@ -631,7 +625,8 @@ if modo_qp == "conductor":
                                 "uid": str(uuid.uuid4()), "id_turno": turno_str, "placa": placa_clean, "nombre": nombre,
                                 "cedula": cedula, "telefono": telefono, "bodega": bodega if bodega != "Seleccione una bodega..." else "",
                                 "tipo_movimiento": "Ingresar", "estado": "En Espera", "fecha_hora": ahora_str(),
-                                "mensaje_admin": "Dirígete a la portería", "mostrar_en_pantalla": False,
+                                "mensaje_admin": "", # SE QUITÓ EL MENSAJE
+                                "mostrar_en_pantalla": False,
                                 "fecha_autorizacion": None, "fecha_ingreso_zf": None, "fecha_salida_zf": None,
                                 "observaciones_conductor": observaciones_conductor,
                             }
@@ -821,9 +816,10 @@ if modo_qp == "vigilante":
             df["fecha_ingreso_zf"] = df["fecha_ingreso_zf"].apply(fecha_legible)
             df["fecha_salida_zf"] = df["fecha_salida_zf"].apply(fecha_legible)
 
+            # SE QUITÓ "mensaje_admin" DE LAS COLUMNAS
             cols = [
                 "id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora",
-                "bodega", "tipo_movimiento", "estado", "mensaje_admin",
+                "bodega", "tipo_movimiento", "estado", 
                 "fecha_autorizacion", "fecha_ingreso_zf", "fecha_salida_zf",
                 "observaciones_conductor", "observaciones_vigilante"
             ]
@@ -832,7 +828,7 @@ if modo_qp == "vigilante":
             df_v = df[cols_disp].rename(columns={
                 "id_turno": "Turno", "placa": "Placa", "nombre": "Conductor", "cedula": "Cédula",
                 "telefono": "Teléfono", "fecha_hora": "Fecha Registro", "bodega": "Bodega",
-                "tipo_movimiento": "Movimiento", "estado": "Estado", "mensaje_admin": "Mensaje",
+                "tipo_movimiento": "Movimiento", "estado": "Estado",
                 "fecha_autorizacion": "Autorizado Operador", "fecha_ingreso_zf": "Ingreso Vigilante",
                 "fecha_salida_zf": "Salida Vigilante", "observaciones_conductor": "Obs. Conductor",
                 "observaciones_vigilante": "Obs. Vigilante",
@@ -942,9 +938,18 @@ if modo_qp == "operador":
                         
                         nuevo_tipo = st.selectbox("Tipo de movimiento", ["Ingresar", "Salir"], index=0 if turno_sel.get("tipo_movimiento") == "Ingresar" else 1)
                         
-                        estados_posibles = ["En Espera", "AUTORIZADO PARA INGRESAR", "EN ZONA FRANCA", "AUTORIZADO PARA SALIR", "FINALIZADO"]
+                        # SOLO 3 OPCIONES
+                        estados_posibles = ["En Espera", "AUTORIZADO PARA INGRESAR", "AUTORIZADO PARA SALIR"]
+                        
+                        # Mapeo para que si el turno ya está EN ZONA FRANCA o FINALIZADO, el dropdown muestre la opción correspondiente
                         estado_actual = turno_sel.get("estado", "En Espera")
-                        idx_estado = estados_posibles.index(estado_actual) if estado_actual in estados_posibles else 0
+                        if "ZONA FRANCA" in estado_actual:
+                            idx_estado = 1 # Mostrar "Autorizado para Ingresar" como si estuviera en ese paso
+                        elif "FINALIZADO" in estado_actual:
+                            idx_estado = 2 # Mostrar "Autorizado para Salir"
+                        else:
+                            idx_estado = estados_posibles.index(estado_actual) if estado_actual in estados_posibles else 0
+                        
                         nuevo_estado = st.selectbox("Estado", estados_posibles, index=idx_estado)
                         
                         st.markdown("---")
@@ -969,7 +974,6 @@ if modo_qp == "operador":
                                 nueva_placa_clean = nueva_placa.replace(" ", "").upper()
                                 placa_duplicada = any(t.get("placa", "").replace(" ", "").upper() == nueva_placa_clean and t.get("uid") != id_sel and "FINALIZADO" not in (t.get("estado") or "").upper() for t in todos_frescos)
                                 
-                                # Se corrige el error convirtiendo el string a datetime con parse_fecha
                                 inicio_periodo = obtener_inicio_periodo(parse_fecha(turno_sel.get("fecha_hora", "")))
                                 tiquet_duplicado = any(t.get("id_turno") == nuevo_tiquet and t.get("uid") != id_sel and "FINALIZADO" not in (t.get("estado") or "").upper() and obtener_inicio_periodo(parse_fecha(t.get("fecha_hora", ""))) == inicio_periodo for t in todos_frescos)
 
@@ -989,14 +993,18 @@ if modo_qp == "operador":
                                             t["id_turno"] = nuevo_tiquet
                                             t["placa"] = nueva_placa_clean
                                             t["tipo_movimiento"] = nuevo_tipo
-                                            t["estado"] = nuevo_estado
                                             
-                                            if nuevo_estado == "EN ZONA FRANCA" and "ZONA" not in antes:
+                                            # LÓGICA AUTOMÁTICA DE ESTADOS
+                                            if nuevo_estado == "AUTORIZADO PARA INGRESAR":
+                                                t["estado"] = "EN ZONA FRANCA"
                                                 t["fecha_ingreso_zf"] = ahora_str()
-                                            if nuevo_estado == "AUTORIZADO PARA SALIR" and "SALIR" not in antes:
-                                                t["fecha_autorizacion"] = ahora_str()
-                                            if nuevo_estado == "FINALIZADO" and "FINALIZADO" not in antes:
+                                            elif nuevo_estado == "AUTORIZADO PARA SALIR":
+                                                t["estado"] = "FINALIZADO"
                                                 t["fecha_salida_zf"] = ahora_str()
+                                            else:
+                                                t["estado"] = "En Espera"
+                                                t["fecha_ingreso_zf"] = None
+                                                t["fecha_salida_zf"] = None
                                                 
                                             break
                                     guardar_datos(todos_frescos)
@@ -1106,6 +1114,11 @@ if modo_qp == "operador":
             df_clean["fecha_autorizacion"] = df_clean["fecha_autorizacion"].apply(fecha_legible)
             df_clean["fecha_ingreso_zf"] = df_clean["fecha_ingreso_zf"].apply(fecha_legible)
             df_clean["fecha_salida_zf"] = df_clean["fecha_salida_zf"].apply(fecha_legible)
+            
+            # Eliminar mensaje_admin antes de exportar
+            if "mensaje_admin" in df_clean.columns:
+                df_clean = df_clean.drop(columns=["mensaje_admin"])
+                
             csv_clean = generar_excel(df_clean)
             st.download_button("Descargar respaldo del historial completo (Excel)", data=csv_clean, file_name=f"respaldo_turnos_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
@@ -1133,12 +1146,14 @@ if modo_qp == "operador":
             df["fecha_autorizacion"] = df["fecha_autorizacion"].apply(fecha_legible)
             df["fecha_ingreso_zf"] = df["fecha_ingreso_zf"].apply(fecha_legible)
             df["fecha_salida_zf"] = df["fecha_salida_zf"].apply(fecha_legible)
-            cols = ["id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora", "bodega", "tipo_movimiento", "estado", "mensaje_admin", "fecha_autorizacion", "fecha_ingreso_zf", "fecha_salida_zf", "observaciones_conductor"]
+            
+            # Se quitó mensaje_admin del historial
+            cols = ["id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora", "bodega", "tipo_movimiento", "estado", "fecha_autorizacion", "fecha_ingreso_zf", "fecha_salida_zf", "observaciones_conductor"]
             cols_disp = [c for c in cols if c in df.columns]
             df_v = df[cols_disp].rename(columns={
                 "id_turno": "Turno", "placa": "Placa", "nombre": "Conductor", "cedula": "Cédula",
                 "telefono": "Teléfono", "fecha_hora": "Fecha Registro", "bodega": "Bodega",
-                "tipo_movimiento": "Movimiento", "estado": "Estado", "mensaje_admin": "Mensaje",
+                "tipo_movimiento": "Movimiento", "estado": "Estado", 
                 "fecha_autorizacion": "Autorizado Operador", "fecha_ingreso_zf": "Ingreso Físico",
                 "fecha_salida_zf": "Salida Física", "observaciones_conductor": "Obs. Conductor",
             })
