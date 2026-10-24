@@ -11,7 +11,7 @@ import time
 import copy
 import uuid
 import re
-import gc # <-- NUEVO: Importado para limpieza de RAM
+import gc
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
@@ -293,13 +293,12 @@ def _migrar_campos(item):
 # --- CONEXIÓN A BASE DE DATOS (NEON) ---
 DATABASE_URL = st.secrets.get("DATABASE_URL", "postgresql://neondb_owner:npg_heCBkPc0r5Qx@ep-weathered-art-b74v5gzj-pooler.c-13.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
 
-@st.cache_data(ttl=30) # <-- TTL reducido a 30 segundos para liberar memoria más rápido
+@st.cache_data(ttl=30)
 def cargar_datos():
     if DATABASE_URL:
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            # <-- LÍMITE REDUCIDO A 300 REGISTROS PARA AHORRAR RAM
             cursor.execute("SELECT * FROM turnos ORDER BY fecha_hora DESC LIMIT 300") 
             datos = cursor.fetchall()
             cursor.close()
@@ -357,7 +356,7 @@ def guardar_datos(datos):
             cursor.close()
             conn.close()
             cargar_datos.clear() 
-            gc.collect() # <-- FORZAR LIMPIEZA DE RAM
+            gc.collect()
             return True
         except Exception as e:
             st.error(f"Error al guardar en la base de datos: {e}")
@@ -847,9 +846,8 @@ if modo_qp == "vigilante":
                 use_container_width=True,
             )
             
-            # LIMPIEZA DE MEMORIA
-            del df
-            del df_v
+            if 'df' in locals(): del df
+            if 'df_v' in locals(): del df_v
             gc.collect()
 
     st.stop()
@@ -1038,22 +1036,32 @@ if modo_qp == "operador":
         elif not HAS_QR:
             st.error("La librería **qrcode[pil]** no está instalada.")
         else:
-            st.markdown("##### Descarga e imprime el código QR para el Conductor")
-            url_portal = f"{base_url}/?modo=conductor"
-            qr_bytes = generar_qr_png(url_portal)
-            cols_qr = st.columns([1, 2, 1])
-            with cols_qr[1]:
-                st.markdown(f"""
-                <div style="background:#FFFFFF; border: 1px solid #E1E8E5; border-top: 4px solid #1B4D3E; border-radius: 10px; padding: 18px 16px 8px 16px; text-align: center; margin-bottom: 12px;">
-                    <div style="color:#1B4D3E; font-weight:700; font-size:14px; letter-spacing:2px;">CONDUCTOR</div>
-                    <div style="color:#6B7280; font-size:11px; margin-top:2px;">Punto de enturnamiento</div>
-                </div>
-                """, unsafe_allow_html=True)
-                if qr_bytes:
-                    st.image(qr_bytes, use_container_width=True)
-                    st.markdown("<div style='text-align:center; margin-top:-10px; margin-bottom:10px;'><b>O ingresa a este enlace:</b></div>", unsafe_allow_html=True)
-                    st.code(url_portal, language=None)
-                    st.download_button("Descargar QR", data=qr_bytes, file_name="qr_conductor_zfc.png", mime="image/png", use_container_width=True)
+            st.markdown("##### Descarga e imprime los códigos QR para los usuarios")
+            
+            # SE AGREGÓ EL QR DEL VIGILANTE
+            portales = [
+                {"clave": "conductor", "titulo": "CONDUCTOR", "subtitulo": "Punto de enturnamiento", "descripcion": "El conductor escanea este QR y accede al formulario de registro.", "color_hex": "#1B4D3E", "archivo_png": "qr_conductor_zfc.png"},
+                {"clave": "vigilante", "titulo": "VIGILANTE", "subtitulo": "Punto de control / garita", "descripcion": "El vigilante escanea este QR y accede a su portal de check-in/out.", "color_hex": "#0D4A56", "archivo_png": "qr_vigilante_zfc.png"},
+            ]
+            cols_qr = st.columns(2)
+            for idx, portal in enumerate(portales):
+                url_portal = f"{base_url}/?modo={portal['clave']}"
+                qr_bytes = generar_qr_png(url_portal)
+                with cols_qr[idx]:
+                    st.markdown(f"""
+                    <div style="background:#FFFFFF; border: 1px solid #E1E8E5; border-top: 4px solid {portal['color_hex']}; border-radius: 10px; padding: 18px 16px 8px 16px; text-align: center; margin-bottom: 12px;">
+                        <div style="color:{portal['color_hex']}; font-weight:700; font-size:14px; letter-spacing:2px;">{portal['titulo']}</div>
+                        <div style="color:#6B7280; font-size:11px; margin-top:2px;">{portal['subtitulo']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if qr_bytes:
+                        st.image(qr_bytes, use_container_width=True)
+                        st.markdown("<div style='text-align:center; margin-top:-10px; margin-bottom:10px;'><b>O ingresa a este enlace:</b></div>", unsafe_allow_html=True)
+                        st.code(url_portal, language=None)
+                        st.caption(portal["descripcion"])
+                        st.download_button(f"Descargar QR · {portal['titulo'].title()}", data=qr_bytes, file_name=portal["archivo_png"], mime="image/png", use_container_width=True, key=f"dl_qr_{portal['clave']}")
+                    else:
+                        st.error("No se pudo generar el QR.")
 
     # --- CONFIG ---
     with tab_config:
@@ -1125,7 +1133,7 @@ if modo_qp == "operador":
             csv_clean = generar_excel(df_clean)
             st.download_button("Descargar respaldo del historial completo (Excel)", data=csv_clean, file_name=f"respaldo_turnos_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
-            del df_clean
+            if 'df_clean' in locals(): del df_clean
             gc.collect()
 
     # --- HISTORIAL ---
@@ -1168,8 +1176,8 @@ if modo_qp == "operador":
                 excel_data = generar_excel(df_v)
                 st.download_button("Haga clic aquí para descargar el archivo", data=excel_data, file_name=f"turnos_zfc_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
-            del df
-            del df_v
+            if 'df' in locals(): del df
+            if 'df_v' in locals(): del df_v
             gc.collect()
 
     st.stop()
