@@ -220,7 +220,11 @@ def ahora_str():
     return datetime.now(colombia_tz).strftime("%Y-%m-%d %H:%M:%S")
 
 def obtener_inicio_periodo(dt=None):
-    if dt is None:
+    # SOLUCIÓN AL ERROR: Si llega un string, lo convertimos a datetime automáticamente
+    if isinstance(dt, str):
+        dt = parse_fecha(dt)
+        
+    if not dt:
         dt = datetime.now(timezone(timedelta(hours=-5)))
     
     wd = dt.weekday()
@@ -299,7 +303,6 @@ def cargar_datos():
     if DATABASE_URL:
         try:
             conn = psycopg2.connect(DATABASE_URL)
-            # Usamos RealDictCursor para obtener diccionarios directamente sin Pandas (Ahorra RAM)
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute("SELECT * FROM turnos ORDER BY fecha_hora DESC LIMIT 1000")
             datos = cursor.fetchall()
@@ -308,7 +311,6 @@ def cargar_datos():
             
             if not datos: return []
                 
-            # Convertir nulos y booleanos
             for item in datos:
                 item["mostrar_en_pantalla"] = bool(item.get("mostrar_en_pantalla", False))
                 for k, v in item.items():
@@ -335,11 +337,9 @@ def guardar_datos(datos):
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
-            # TRUNCATE es más rápido que DELETE
             cursor.execute("TRUNCATE TABLE turnos")
             
             if datos:
-                # Usamos execute_values para inserción masiva (Mucho más rápido y ligero)
                 values = [(
                     t.get("uid"), t.get("id_turno"), t.get("placa"), t.get("nombre"), 
                     t.get("cedula"), t.get("telefono"), t.get("bodega"), t.get("tipo_movimiento"), 
@@ -360,7 +360,7 @@ def guardar_datos(datos):
             conn.commit()
             cursor.close()
             conn.close()
-            cargar_datos.clear() # Limpiar caché
+            cargar_datos.clear() 
             return True
         except Exception as e:
             st.error(f"Error al guardar en la base de datos: {e}")
@@ -969,8 +969,9 @@ if modo_qp == "operador":
                                 nueva_placa_clean = nueva_placa.replace(" ", "").upper()
                                 placa_duplicada = any(t.get("placa", "").replace(" ", "").upper() == nueva_placa_clean and t.get("uid") != id_sel and "FINALIZADO" not in (t.get("estado") or "").upper() for t in todos_frescos)
                                 
-                                inicio_periodo = obtener_inicio_periodo(turno_sel.get("fecha_hora", ""))
-                                tiquet_duplicado = any(t.get("id_turno") == nuevo_tiquet and t.get("uid") != id_sel and "FINALIZADO" not in (t.get("estado") or "").upper() and obtener_inicio_periodo(t.get("fecha_hora", "")) == inicio_periodo for t in todos_frescos)
+                                # Se corrige el error convirtiendo el string a datetime con parse_fecha
+                                inicio_periodo = obtener_inicio_periodo(parse_fecha(turno_sel.get("fecha_hora", "")))
+                                tiquet_duplicado = any(t.get("id_turno") == nuevo_tiquet and t.get("uid") != id_sel and "FINALIZADO" not in (t.get("estado") or "").upper() and obtener_inicio_periodo(parse_fecha(t.get("fecha_hora", ""))) == inicio_periodo for t in todos_frescos)
 
                                 if placa_duplicada:
                                     st.error(f"La placa {nueva_placa} ya está registrada en otro turno activo.")
