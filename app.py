@@ -16,6 +16,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 import psycopg2
+from psycopg2.extras import RealDictCursor, execute_values
 import psutil
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -290,26 +291,31 @@ def _migrar_campos(item):
     for k, v in defaults.items():
         item.setdefault(k, v)
 
-# --- CONEXIÓN A BASE DE DATOS (NEON) CON CACHÉ ---
-DATABASE_URL = st.secrets.get("DATABASE_URL", None)
+# --- CONEXIÓN A BASE DE DATOS (NEON CON CONTRASEÑA ACTUALIZADA) ---
+DATABASE_URL = st.secrets.get("DATABASE_URL", "postgresql://neondb_owner:npg_heCBkPc0r5Qx@ep-weathered-art-b74v5gzj-pooler.c-13.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
 
-@st.cache_data(ttl=60) # Caché de 60 segundos para evitar consultar la BD a cada rato
+@st.cache_data(ttl=60) # Caché de 60 segundos
 def cargar_datos():
     if DATABASE_URL:
         try:
             conn = psycopg2.connect(DATABASE_URL)
-            query = "SELECT * FROM turnos ORDER BY fecha_hora DESC LIMIT 1000" # Límite para no consumir RAM
-            df = pd.read_sql_query(query, conn)
+            # Usamos RealDictCursor para obtener diccionarios directamente sin Pandas (Ahorra RAM)
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("SELECT * FROM turnos ORDER BY fecha_hora DESC LIMIT 1000")
+            datos = cursor.fetchall()
+            cursor.close()
             conn.close()
             
-            if df.empty: return []
+            if not datos: return []
                 
-            df["mostrar_en_pantalla"] = df["mostrar_en_pantalla"].apply(lambda x: bool(x) if x is not None else False)
-            df = df.fillna("")
-            
-            datos = df.to_dict(orient="records")
+            # Convertir nulos y booleanos
             for item in datos:
+                item["mostrar_en_pantalla"] = bool(item.get("mostrar_en_pantalla", False))
+                for k, v in item.items():
+                    if v is None:
+                        item[k] = ""
                 _migrar_campos(item)
+                
             return datos
         except Exception as e:
             st.error(f"Error al conectar con la base de datos: {e}")
@@ -329,27 +335,32 @@ def guardar_datos(datos):
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM turnos")
+            # TRUNCATE es más rápido que DELETE
+            cursor.execute("TRUNCATE TABLE turnos")
             
             if datos:
-                for t in datos:
-                    cursor.execute("""
-                        INSERT INTO turnos (
-                            uid, id_turno, placa, nombre, cedula, telefono, bodega, 
-                            tipo_movimiento, estado, fecha_hora, mensaje_admin, 
-                            mostrar_en_pantalla, fecha_autorizacion, fecha_ingreso_zf, 
-                            fecha_salida_zf, observaciones_conductor
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (
-                        t.get("uid"), t.get("id_turno"), t.get("placa"), t.get("nombre"), 
-                        t.get("cedula"), t.get("telefono"), t.get("bodega"), t.get("tipo_movimiento"), 
-                        t.get("estado"), t.get("fecha_hora"), t.get("mensaje_admin"), 
-                        bool(t.get("mostrar_en_pantalla", False)), t.get("fecha_autorizacion"), 
-                        t.get("fecha_ingreso_zf"), t.get("fecha_salida_zf"), t.get("observaciones_conductor")
-                    ))
+                # Usamos execute_values para inserción masiva (Mucho más rápido y ligero)
+                values = [(
+                    t.get("uid"), t.get("id_turno"), t.get("placa"), t.get("nombre"), 
+                    t.get("cedula"), t.get("telefono"), t.get("bodega"), t.get("tipo_movimiento"), 
+                    t.get("estado"), t.get("fecha_hora"), t.get("mensaje_admin"), 
+                    bool(t.get("mostrar_en_pantalla", False)), t.get("fecha_autorizacion"), 
+                    t.get("fecha_ingreso_zf"), t.get("fecha_salida_zf"), t.get("observaciones_conductor")
+                ) for t in datos]
+                
+                execute_values(cursor, """
+                    INSERT INTO turnos (
+                        uid, id_turno, placa, nombre, cedula, telefono, bodega, 
+                        tipo_movimiento, estado, fecha_hora, mensaje_admin, 
+                        mostrar_en_pantalla, fecha_autorizacion, fecha_ingreso_zf, 
+                        fecha_salida_zf, observaciones_conductor
+                    ) VALUES %s
+                """, values)
+                
             conn.commit()
+            cursor.close()
             conn.close()
-            cargar_datos.clear() # Limpiar caché para que muestre los datos nuevos
+            cargar_datos.clear() # Limpiar caché
             return True
         except Exception as e:
             st.error(f"Error al guardar en la base de datos: {e}")
@@ -599,7 +610,6 @@ if modo_qp == "conductor":
                             except Exception: pass
                             st.rerun()
                         else:
-                            # Nueva lógica de periodos
                             inicio_periodo = obtener_inicio_periodo()
                             letra_periodo = obtener_letra_periodo(inicio_periodo)
                             
