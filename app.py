@@ -11,6 +11,7 @@ import time
 import copy
 import uuid
 import re
+import gc # <-- NUEVO: Importado para limpieza de RAM
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
@@ -257,16 +258,16 @@ def obtener_letra_periodo(inicio_periodo):
     d = base
     
     while d < inicio_periodo:
-        if d.weekday() == 0: # Lunes
+        if d.weekday() == 0:
             resets += 1
             d += timedelta(days=1)
-        elif d.weekday() in [1, 2, 3, 4]: # Martes a Viernes
+        elif d.weekday() in [1, 2, 3, 4]:
             resets += 1
             d += timedelta(days=1)
-        elif d.weekday() == 5: # Sábado
+        elif d.weekday() == 5:
             resets += 1
             d += timedelta(days=1)
-        elif d.weekday() == 6: # Domingo
+        elif d.weekday() == 6:
             d += timedelta(days=1)
             
     return chr(65 + ((resets - 1) % 26))
@@ -292,13 +293,14 @@ def _migrar_campos(item):
 # --- CONEXIÓN A BASE DE DATOS (NEON) ---
 DATABASE_URL = st.secrets.get("DATABASE_URL", "postgresql://neondb_owner:npg_heCBkPc0r5Qx@ep-weathered-art-b74v5gzj-pooler.c-13.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30) # <-- TTL reducido a 30 segundos para liberar memoria más rápido
 def cargar_datos():
     if DATABASE_URL:
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute("SELECT * FROM turnos ORDER BY fecha_hora DESC LIMIT 1000")
+            # <-- LÍMITE REDUCIDO A 300 REGISTROS PARA AHORRAR RAM
+            cursor.execute("SELECT * FROM turnos ORDER BY fecha_hora DESC LIMIT 300") 
             datos = cursor.fetchall()
             cursor.close()
             conn.close()
@@ -355,6 +357,7 @@ def guardar_datos(datos):
             cursor.close()
             conn.close()
             cargar_datos.clear() 
+            gc.collect() # <-- FORZAR LIMPIEZA DE RAM
             return True
         except Exception as e:
             st.error(f"Error al guardar en la base de datos: {e}")
@@ -363,6 +366,7 @@ def guardar_datos(datos):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(datos, f, ensure_ascii=False, indent=2)
         cargar_datos.clear()
+        gc.collect()
         return True
 
 def cargar_config():
@@ -625,7 +629,7 @@ if modo_qp == "conductor":
                                 "uid": str(uuid.uuid4()), "id_turno": turno_str, "placa": placa_clean, "nombre": nombre,
                                 "cedula": cedula, "telefono": telefono, "bodega": bodega if bodega != "Seleccione una bodega..." else "",
                                 "tipo_movimiento": "Ingresar", "estado": "En Espera", "fecha_hora": ahora_str(),
-                                "mensaje_admin": "", # SE QUITÓ EL MENSAJE
+                                "mensaje_admin": "",
                                 "mostrar_en_pantalla": False,
                                 "fecha_autorizacion": None, "fecha_ingreso_zf": None, "fecha_salida_zf": None,
                                 "observaciones_conductor": observaciones_conductor,
@@ -816,7 +820,6 @@ if modo_qp == "vigilante":
             df["fecha_ingreso_zf"] = df["fecha_ingreso_zf"].apply(fecha_legible)
             df["fecha_salida_zf"] = df["fecha_salida_zf"].apply(fecha_legible)
 
-            # SE QUITÓ "mensaje_admin" DE LAS COLUMNAS
             cols = [
                 "id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora",
                 "bodega", "tipo_movimiento", "estado", 
@@ -843,6 +846,11 @@ if modo_qp == "vigilante":
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
+            
+            # LIMPIEZA DE MEMORIA
+            del df
+            del df_v
+            gc.collect()
 
     st.stop()
 
@@ -938,15 +946,13 @@ if modo_qp == "operador":
                         
                         nuevo_tipo = st.selectbox("Tipo de movimiento", ["Ingresar", "Salir"], index=0 if turno_sel.get("tipo_movimiento") == "Ingresar" else 1)
                         
-                        # SOLO 3 OPCIONES
                         estados_posibles = ["En Espera", "AUTORIZADO PARA INGRESAR", "AUTORIZADO PARA SALIR"]
                         
-                        # Mapeo para que si el turno ya está EN ZONA FRANCA o FINALIZADO, el dropdown muestre la opción correspondiente
                         estado_actual = turno_sel.get("estado", "En Espera")
                         if "ZONA FRANCA" in estado_actual:
-                            idx_estado = 1 # Mostrar "Autorizado para Ingresar" como si estuviera en ese paso
+                            idx_estado = 1 
                         elif "FINALIZADO" in estado_actual:
-                            idx_estado = 2 # Mostrar "Autorizado para Salir"
+                            idx_estado = 2 
                         else:
                             idx_estado = estados_posibles.index(estado_actual) if estado_actual in estados_posibles else 0
                         
@@ -989,12 +995,10 @@ if modo_qp == "operador":
                                 else:
                                     for t in todos_frescos:
                                         if t.get("uid") == id_sel:
-                                            antes = (t.get("estado") or "").upper()
                                             t["id_turno"] = nuevo_tiquet
                                             t["placa"] = nueva_placa_clean
                                             t["tipo_movimiento"] = nuevo_tipo
                                             
-                                            # LÓGICA AUTOMÁTICA DE ESTADOS
                                             if nuevo_estado == "AUTORIZADO PARA INGRESAR":
                                                 t["estado"] = "EN ZONA FRANCA"
                                                 t["fecha_ingreso_zf"] = ahora_str()
@@ -1115,12 +1119,14 @@ if modo_qp == "operador":
             df_clean["fecha_ingreso_zf"] = df_clean["fecha_ingreso_zf"].apply(fecha_legible)
             df_clean["fecha_salida_zf"] = df_clean["fecha_salida_zf"].apply(fecha_legible)
             
-            # Eliminar mensaje_admin antes de exportar
             if "mensaje_admin" in df_clean.columns:
                 df_clean = df_clean.drop(columns=["mensaje_admin"])
                 
             csv_clean = generar_excel(df_clean)
             st.download_button("Descargar respaldo del historial completo (Excel)", data=csv_clean, file_name=f"respaldo_turnos_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            
+            del df_clean
+            gc.collect()
 
     # --- HISTORIAL ---
     with tab_historial:
@@ -1147,7 +1153,6 @@ if modo_qp == "operador":
             df["fecha_ingreso_zf"] = df["fecha_ingreso_zf"].apply(fecha_legible)
             df["fecha_salida_zf"] = df["fecha_salida_zf"].apply(fecha_legible)
             
-            # Se quitó mensaje_admin del historial
             cols = ["id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora", "bodega", "tipo_movimiento", "estado", "fecha_autorizacion", "fecha_ingreso_zf", "fecha_salida_zf", "observaciones_conductor"]
             cols_disp = [c for c in cols if c in df.columns]
             df_v = df[cols_disp].rename(columns={
@@ -1162,6 +1167,10 @@ if modo_qp == "operador":
             if st.button("Preparar y Descargar Excel"):
                 excel_data = generar_excel(df_v)
                 st.download_button("Haga clic aquí para descargar el archivo", data=excel_data, file_name=f"turnos_zfc_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            
+            del df
+            del df_v
+            gc.collect()
 
     st.stop()
 
