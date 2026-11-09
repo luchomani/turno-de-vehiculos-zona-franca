@@ -38,12 +38,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ==========================================================================
-# CSS CORPORATIVO
-# ==========================================================================
+# ... (Todo el CSS se mantiene igual, por espacio lo omito aquí, pero está en tu archivo)
 st.markdown("""
 <style>
-    /* ... (todo el CSS que ya tenías) ... */
     :root {
         --zfc-green-dark:  #0F3A24;
         --zfc-green-main:  #1B4D3E;
@@ -203,7 +200,6 @@ def _migrar_campos(item):
 DATABASE_URL = st.secrets.get("DATABASE_URL", "postgresql://neondb_owner:npg_heCBkPc0r5Qx@ep-weathered-art-b74v5gzj-pooler.c-13.us-east-1.aws.neon.tech/neondb?sslmode=require&keepalives=1&keepalives_idle=30&connect_timeout=30")
 
 def obtener_conexion_segura(max_intentos=3):
-    """Intenta conectar hasta 3 veces si la base de datos está dormida."""
     for intento in range(max_intentos):
         try:
             conn = psycopg2.connect(DATABASE_URL)
@@ -219,23 +215,19 @@ def obtener_conexion_segura(max_intentos=3):
 def cargar_datos():
     if DATABASE_URL:
         conn = obtener_conexion_segura()
-        if not conn:
-            return []
-            
+        if not conn: return []
         try:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
+            # Solo cargamos los últimos 300 para mantener la RAM baja
             cursor.execute("SELECT * FROM turnos ORDER BY fecha_hora DESC LIMIT 300") 
             datos = cursor.fetchall()
-            
             if not datos: return []
                 
             for item in datos:
                 item["mostrar_en_pantalla"] = bool(item.get("mostrar_en_pantalla", False))
                 for k, v in item.items():
-                    if v is None:
-                        item[k] = ""
+                    if v is None: item[k] = ""
                 _migrar_campos(item)
-                
             return datos
         except Exception as e:
             st.error(f"Error al cargar datos: {e}")
@@ -256,13 +248,9 @@ def cargar_datos():
 def guardar_datos(datos):
     if DATABASE_URL:
         conn = obtener_conexion_segura()
-        if not conn:
-            return False
-            
+        if not conn: return False
         try:
             cursor = conn.cursor()
-            cursor.execute("TRUNCATE TABLE turnos")
-            
             if datos:
                 values = [(
                     t.get("uid"), t.get("id_turno"), t.get("placa"), t.get("nombre"), 
@@ -272,6 +260,7 @@ def guardar_datos(datos):
                     t.get("fecha_ingreso_zf"), t.get("fecha_salida_zf"), t.get("observaciones_conductor")
                 ) for t in datos]
                 
+                # ¡AQUÍ ESTÁ EL ARREGLO! Usamos UPSERT (Insertar o Actualizar) en lugar de TRUNCATE
                 execute_values(cursor, """
                     INSERT INTO turnos (
                         uid, id_turno, placa, nombre, cedula, telefono, bodega, 
@@ -279,6 +268,13 @@ def guardar_datos(datos):
                         mostrar_en_pantalla, fecha_autorizacion, fecha_ingreso_zf, 
                         fecha_salida_zf, observaciones_conductor
                     ) VALUES %s
+                    ON CONFLICT (uid) DO UPDATE SET
+                        id_turno = EXCLUDED.id_turno,
+                        placa = EXCLUDED.placa,
+                        estado = EXCLUDED.estado,
+                        fecha_autorizacion = EXCLUDED.fecha_autorizacion,
+                        fecha_ingreso_zf = EXCLUDED.fecha_ingreso_zf,
+                        fecha_salida_zf = EXCLUDED.fecha_salida_zf
                 """, values)
                 
             conn.commit()
@@ -297,6 +293,44 @@ def guardar_datos(datos):
         cargar_datos.clear()
         gc.collect()
         return True
+
+def eliminar_turno_db(uid):
+    """Función específica para eliminar un turno de la base de datos."""
+    if DATABASE_URL:
+        conn = obtener_conexion_segura()
+        if not conn: return False
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM turnos WHERE uid = %s", (uid,))
+            conn.commit()
+            cargar_datos.clear()
+            return True
+        except Exception as e:
+            st.error(f"Error al eliminar turno: {e}")
+            return False
+        finally:
+            cursor.close()
+            conn.close()
+    return False
+
+def vaciar_tabla_db():
+    """Función para limpiar TODA la tabla."""
+    if DATABASE_URL:
+        conn = obtener_conexion_segura()
+        if not conn: return False
+        try:
+            cursor = conn.cursor()
+            cursor.execute("TRUNCATE TABLE turnos")
+            conn.commit()
+            cargar_datos.clear()
+            return True
+        except Exception as e:
+            st.error(f"Error al limpiar historial: {e}")
+            return False
+        finally:
+            cursor.close()
+            conn.close()
+    return False
 
 def cargar_config():
     if os.path.exists(CONFIG_FILE):
@@ -896,13 +930,12 @@ if modo_qp == "operador":
                                     st.error("Contraseña incorrecta. No se puede eliminar el turno.")
                                     st.toast("Proceso Denegado", icon=":material/error:")
                                 else:
-                                    todos = cargar_datos()
-                                    todos = [t for t in todos if t.get("uid") != id_sel]
-                                    guardar_datos(todos)
-                                    st.success(f"Turno {turno_sel['id_turno']} eliminado correctamente.")
-                                    st.toast("Proceso Exitoso", icon=":material/check_circle:")
-                                    time.sleep(1)
-                                    st.rerun()
+                                    # Usamos la nueva función para eliminar solo este turno
+                                    if eliminar_turno_db(id_sel):
+                                        st.success(f"Turno {turno_sel['id_turno']} eliminado correctamente.")
+                                        st.toast("Proceso Exitoso", icon=":material/check_circle:")
+                                        time.sleep(1)
+                                        st.rerun()
                             else:
                                 todos_frescos = cargar_datos()
                                 nueva_placa_clean = nueva_placa.replace(" ", "").upper()
@@ -1041,9 +1074,10 @@ if modo_qp == "operador":
         pass_limpieza = st.text_input("Ingrese contraseña de Operador para confirmar limpieza", type="password")
         if st.button("Limpiar todo el historial", use_container_width=True, key="clean_todos_hoy"):
             if pass_limpieza == CONFIG.get("contrasena_admin"):
-                guardar_datos([])
-                st.success("Se eliminaron todos los turnos. Sistema limpio.")
-                st.rerun()
+                # Usamos la función segura para vaciar la tabla
+                if vaciar_tabla_db():
+                    st.success("Se eliminaron todos los turnos. Sistema limpio.")
+                    st.rerun()
             else:
                 st.error("Contraseña incorrecta. No se puede limpiar el historial.")
 
