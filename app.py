@@ -38,7 +38,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ... (Todo el CSS se mantiene igual, por espacio lo omito aquí, pero está en tu archivo)
+# ==========================================================================
+# CSS CORPORATIVO
+# ==========================================================================
 st.markdown("""
 <style>
     :root {
@@ -197,6 +199,7 @@ def _migrar_campos(item):
         item.setdefault(k, v)
 
 # --- CONEXIÓN A BASE DE DATOS (NEON BLINDADO) ---
+# Contraseña mantenida tal como lo solicitaste
 DATABASE_URL = st.secrets.get("DATABASE_URL", "postgresql://neondb_owner:npg_heCBkPc0r5Qx@ep-weathered-art-b74v5gzj-pooler.c-13.us-east-1.aws.neon.tech/neondb?sslmode=require&keepalives=1&keepalives_idle=30&connect_timeout=30")
 
 def obtener_conexion_segura(max_intentos=3):
@@ -218,7 +221,7 @@ def cargar_datos():
         if not conn: return []
         try:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            # Solo cargamos los últimos 300 para mantener la RAM baja
+            # Solo cargamos los últimos 300 para mantener la RAM baja en la vista diaria
             cursor.execute("SELECT * FROM turnos ORDER BY fecha_hora DESC LIMIT 300") 
             datos = cursor.fetchall()
             if not datos: return []
@@ -245,6 +248,27 @@ def cargar_datos():
             except Exception: return []
         return []
 
+def cargar_todo_para_excel():
+    """Carga TODOS los registros de la base de datos sin límite para exportar a Excel."""
+    if DATABASE_URL:
+        conn = obtener_conexion_segura()
+        if not conn: return []
+        try:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("SELECT * FROM turnos ORDER BY fecha_hora DESC")
+            datos = cursor.fetchall()
+            for item in datos:
+                for k, v in item.items():
+                    if v is None: item[k] = ""
+            return datos
+        except Exception as e:
+            st.error(f"Error al exportar: {e}")
+            return []
+        finally:
+            cursor.close()
+            conn.close()
+    return []
+
 def guardar_datos(datos):
     if DATABASE_URL:
         conn = obtener_conexion_segura()
@@ -260,7 +284,6 @@ def guardar_datos(datos):
                     t.get("fecha_ingreso_zf"), t.get("fecha_salida_zf"), t.get("observaciones_conductor")
                 ) for t in datos]
                 
-                # ¡AQUÍ ESTÁ EL ARREGLO! Usamos UPSERT (Insertar o Actualizar) en lugar de TRUNCATE
                 execute_values(cursor, """
                     INSERT INTO turnos (
                         uid, id_turno, placa, nombre, cedula, telefono, bodega, 
@@ -295,7 +318,6 @@ def guardar_datos(datos):
         return True
 
 def eliminar_turno_db(uid):
-    """Función específica para eliminar un turno de la base de datos."""
     if DATABASE_URL:
         conn = obtener_conexion_segura()
         if not conn: return False
@@ -314,7 +336,6 @@ def eliminar_turno_db(uid):
     return False
 
 def vaciar_tabla_db():
-    """Función para limpiar TODA la tabla."""
     if DATABASE_URL:
         conn = obtener_conexion_segura()
         if not conn: return False
@@ -490,7 +511,7 @@ if modo_qp == "conductor":
 
         if mi_turno and "FINALIZADO" not in (mi_turno.get("estado") or "").upper():
 
-            @st.fragment(run_every=5)
+            @st.fragment(run_every=10) # Cambiado a 10 para ahorrar RAM
             def tiquet_vivo():
                 tv = cargar_datos()
                 actual = buscar_turno(tv, st.session_state.mi_turno_id)
@@ -662,7 +683,7 @@ if modo_qp == "vigilante":
     tab_control, tab_historial_vig = st.tabs(["Control de Acceso", "Historial"])
 
     with tab_control:
-        @st.fragment(run_every=5)
+        @st.fragment(run_every=10) # Cambiado a 10 para ahorrar RAM
         def panel_vigilante():
             turnos = cargar_datos()
             
@@ -930,7 +951,6 @@ if modo_qp == "operador":
                                     st.error("Contraseña incorrecta. No se puede eliminar el turno.")
                                     st.toast("Proceso Denegado", icon=":material/error:")
                                 else:
-                                    # Usamos la nueva función para eliminar solo este turno
                                     if eliminar_turno_db(id_sel):
                                         st.success(f"Turno {turno_sel['id_turno']} eliminado correctamente.")
                                         st.toast("Proceso Exitoso", icon=":material/check_circle:")
@@ -959,18 +979,8 @@ if modo_qp == "operador":
                                             t["id_turno"] = nuevo_tiquet
                                             t["placa"] = nueva_placa_clean
                                             t["tipo_movimiento"] = nuevo_tipo
+                                            t["estado"] = nuevo_estado # El Operador solo autoriza, no cambia a Zona Franca ni Finalizado directamente
                                             
-                                            if nuevo_estado == "AUTORIZADO PARA INGRESAR":
-                                                t["estado"] = "EN ZONA FRANCA"
-                                                t["fecha_ingreso_zf"] = ahora_str()
-                                            elif nuevo_estado == "AUTORIZADO PARA SALIR":
-                                                t["estado"] = "FINALIZADO"
-                                                t["fecha_salida_zf"] = ahora_str()
-                                            else:
-                                                t["estado"] = "En Espera"
-                                                t["fecha_ingreso_zf"] = None
-                                                t["fecha_salida_zf"] = None
-                                                
                                             break
                                     guardar_datos(todos_frescos)
                                     st.success("Cambios guardados exitosamente.")
@@ -1065,7 +1075,7 @@ if modo_qp == "operador":
 
         st.markdown("---")
         st.markdown("#### Limpieza de Jornada")
-        turnos_actuales = cargar_datos()
+        turnos_actuales = cargar_todo_para_excel() # <--- Usa la función completa aquí
         total_registros = len(turnos_actuales)
         c_met1, c_met2 = st.columns(2)
         c_met1.metric("Total registros en historial", total_registros)
@@ -1074,7 +1084,6 @@ if modo_qp == "operador":
         pass_limpieza = st.text_input("Ingrese contraseña de Operador para confirmar limpieza", type="password")
         if st.button("Limpiar todo el historial", use_container_width=True, key="clean_todos_hoy"):
             if pass_limpieza == CONFIG.get("contrasena_admin"):
-                # Usamos la función segura para vaciar la tabla
                 if vaciar_tabla_db():
                     st.success("Se eliminaron todos los turnos. Sistema limpio.")
                     st.rerun()
